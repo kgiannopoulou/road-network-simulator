@@ -1,0 +1,15 @@
+{
+  "name": "road-network-simulator",
+  "version": "0.4.0",
+  "description": "A 2D road network simulator built from scratch on HTML Canvas: game loop, camera, geometry library, road graph editor and procedural road generation.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "npx --yes http-server -c-1 -p 8080 .",
+    "test": "node --test \"tests/unit/*.test.js\""
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT"
+}

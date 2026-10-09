@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Road Network Simulator</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body>
+    <canvas id="world" aria-label="Road network editor"></canvas>
+
+    <header class="toolbar">
+      <span class="brand">Road Network Simulator</span>
+
+      <div class="group" aria-label="Editor mode">
+        <button data-mode="graph" title="Build nodes and edges (1)">Graph <kbd>1</kbd></button>
+        <button data-mode="road" title="Configure lanes and direction (2)">Roads <kbd>2</kbd></button>
+      </div>
+
+      <div class="group" aria-label="View">
+        <button data-toggle="snapToGrid" title="Snap new and dragged nodes to the grid (G)">Snap <kbd>G</kbd></button>
+        <button data-toggle="showGrid" title="Show world grid (Shift+G)">Grid</button>
+        <button data-toggle="showGraph" title="Show graph skeleton (V)">Skeleton <kbd>V</kbd></button>
+        <button data-toggle="debugGeometry" title="Show envelopes, vertices and bounding boxes (B)">Geometry <kbd>B</kbd></button>
+        <button data-toggle="showOverlay" title="Debug overlay (F3)">Stats <kbd>F3</kbd></button>
+      </div>
+
+      <div class="group" aria-label="File">
+        <button data-action="fit" title="Fit network to screen (F)">Fit <kbd>F</kbd></button>
+        <button data-action="demo" title="Replace with the demo network">Demo</button>
+        <button data-action="clear" title="Remove every node and edge">Clear</button>
+        <button data-action="export" title="Download the graph as JSON">Export</button>
+        <button data-action="import" title="Load a graph JSON file">Import</button>
+        <input id="import-file" type="file" accept=".json,application/json" hidden />
+        <button data-action="help" title="Controls (H)">Help <kbd>H</kbd></button>
+      </div>
+    </header>
+
+    <aside id="road-panel" class="panel road-panel" hidden>
+      <h2>Selected road</h2>
+      <dl>
+        <dt>Length</dt><dd data-field="length"></dd>
+        <dt>Width</dt><dd data-field="width"></dd>
+        <dt>Lanes →</dt><dd data-field="forward"></dd>
+        <dt>Lanes ←</dt><dd data-field="backward"></dd>
+      </dl>
+      <div class="row">
+        <span>Lanes</span>
+        <button data-road="lanes-" title="Remove a lane (−)">−</button>
+        <output data-field="lanes"></output>
+        <button data-road="lanes+" title="Add a lane (+)">+</button>
+      </div>
+      <label class="row"><input type="checkbox" data-road="oneWay" /> One-way <kbd>O</kbd></label>
+      <div class="row">
+        <button data-road="reverse" title="Swap start and end (R)">Reverse <kbd>R</kbd></button>
+        <button data-road="delete" class="danger" title="Delete this road (Del)">Delete</button>
+      </div>
+      <p class="hint"><span class="dot start"></span> start &nbsp; <span class="dot end"></span> end — forward lanes run start → end on the right.</p>
+    </aside>
+
+    <aside id="help" class="panel help" hidden>
+      <h2>Controls</h2>
+      <h3>Camera</h3>
+      <ul>
+        <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / arrows — move</li>
+        <li>Mouse wheel — zoom at cursor</li>
+        <li>Middle drag or <kbd>Space</kbd> + drag — pan</li>
+        <li><kbd>F</kbd> fit network · <kbd>0</kbd> reset view</li>
+      </ul>
+      <h3>Graph mode <kbd>1</kbd></h3>
+      <ul>
+        <li>Click empty space — add node (links to selection)</li>
+        <li>Click a road — split it with a new node (<kbd>Shift</kbd> to skip)</li>
+        <li>Click node — select / connect · drag — move</li>
+        <li>Right click — deselect, or delete hovered node/edge</li>
+        <li><kbd>Del</kbd> delete selected node · <kbd>Esc</kbd> deselect</li>
+      </ul>
+      <h3>Roads mode <kbd>2</kbd></h3>
+      <ul>
+        <li>Click a road to select it</li>
+        <li><kbd>+</kbd>/<kbd>−</kbd> lanes · <kbd>O</kbd> one-way · <kbd>R</kbd> reverse</li>
+      </ul>
+      <h3>Debug</h3>
+      <ul>
+        <li><kbd>F3</kbd> stats · <kbd>B</kbd> geometry · <kbd>V</kbd> skeleton</li>
+        <li><kbd>G</kbd> snap · <kbd>Shift</kbd>+<kbd>G</kbd> grid · <kbd>H</kbd> this help</li>
+      </ul>
+      <p class="hint">Your network is saved in this browser automatically.</p>
+    </aside>
+
+    <pre id="debug" class="debug"></pre>
+    <footer id="status" class="status"></footer>
+
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>
