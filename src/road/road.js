@@ -1,4 +1,6 @@
+import { fromKmh } from '../car/units.js';
 import { Envelope } from '../primitives/envelope.js';
+import { defaultSpeedLimit, ROAD_TYPES } from './roadTypes.js';
 
 /**
  * Geometry derived from one graph edge: its width, surface envelope and lane
@@ -21,6 +23,9 @@ export class Road {
     this.laneCount = Math.max(this.oneWay ? 1 : 2, Math.round(segment.lanes) || 0);
     this.laneWidth = laneWidth;
     this.width = this.laneCount * laneWidth;
+    this.type = ROAD_TYPES[segment.type] ? segment.type : 'street';
+    this.speedLimitKmh = segment.speedLimit || defaultSpeedLimit(this.type, this.laneCount);
+    this.speedLimit = fromKmh(this.speedLimitKmh); // world units / s
     this.envelope = new Envelope(segment, this.width, roundness);
 
     // Filled in by RoadNetwork once neighbours are known.

@@ -42,6 +42,7 @@ export class GraphEditor {
     this.hoveredSegment = null;
     this.selected = null;
     this.selectedSegment = null;
+    this.selectedJunction = null; // node (Phase 6: junction controls in Roads mode)
     this.dragging = false;
   }
 
@@ -49,6 +50,7 @@ export class GraphEditor {
     this.mode = mode;
     this.selected = null;
     this.selectedSegment = null;
+    this.selectedJunction = null; // node (Phase 6: junction controls in Roads mode)
     this.dragging = false;
   }
 
@@ -144,9 +146,15 @@ export class GraphEditor {
     const { input } = this;
 
     if (input.wasMousePressed(MouseButton.LEFT) && input.mouse.inside) {
-      this.selectedSegment = this.hoveredSegment;
+      // A junction node (3+ roads) selects the junction, otherwise a road.
+      const junction = this.hovered && this.graph.degree(this.hovered) >= 3 ? this.hovered : null;
+      this.selectedJunction = junction;
+      this.selectedSegment = junction ? null : this.hoveredSegment;
     }
-    if (input.wasMousePressed(MouseButton.RIGHT)) this.selectedSegment = null;
+    if (input.wasMousePressed(MouseButton.RIGHT)) {
+      this.selectedSegment = null;
+      this.selectedJunction = null;
+    }
 
     const seg = this.selectedSegment;
     if (!seg) return;
@@ -168,6 +176,22 @@ export class GraphEditor {
     if (next === seg.lanes) return;
     seg.lanes = next;
     this.#rememberAttributes(seg);
+  }
+
+  setType(seg, type) {
+    seg.type = type;
+    this.graph.touch();
+  }
+
+  /** km/h, or null for the road type's default. */
+  setSpeedLimit(seg, kmh) {
+    seg.speedLimit = kmh || null;
+    this.graph.touch();
+  }
+
+  setCrossing(seg, crossing) {
+    seg.crossing = crossing;
+    this.graph.touch();
   }
 
   setOneWay(seg, oneWay) {
@@ -195,6 +219,9 @@ export class GraphEditor {
   #dropStaleReferences() {
     const { graph } = this;
     if (this.selected && !graph.points.includes(this.selected)) this.selected = null;
+    if (this.selectedJunction && (!graph.points.includes(this.selectedJunction) || graph.degree(this.selectedJunction) < 3)) {
+      this.selectedJunction = null;
+    }
     if (this.selectedSegment && !graph.segments.includes(this.selectedSegment)) {
       this.selectedSegment = null;
     }
@@ -260,6 +287,11 @@ export class GraphEditor {
     };
     if (this.hoveredSegment && this.hoveredSegment !== this.selectedSegment) {
       highlight(this.hoveredSegment, 'rgba(255, 213, 74, 0.18)');
+    }
+    if (this.selectedJunction) {
+      this.selectedJunction.draw(ctx, { size: 22 * px, color: 'rgba(255, 213, 74, 0.35)', outline: '#ffd54a' });
+    } else if (this.hovered && this.graph.degree(this.hovered) >= 3) {
+      this.hovered.draw(ctx, { size: 18 * px, color: 'rgba(255, 213, 74, 0.2)', outline: '#ffffff' });
     }
     if (this.selectedSegment) {
       highlight(this.selectedSegment, 'rgba(255, 213, 74, 0.32)');

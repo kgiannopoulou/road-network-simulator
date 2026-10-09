@@ -130,7 +130,7 @@ export class Trainer {
    * road without sharp turns, so the first lesson is plain road following.
    * Ties go to the start with the most road reachable beyond it.
    */
-  static chooseSpawn(roads) {
+  static chooseSpawn(roads, { fraction = null } = {}) {
     if (roads.length === 0) return null;
     const planner = new RoutePlanner(roads);
     const heading = (step) => {
@@ -179,7 +179,7 @@ export class Trainer {
       if (!best || score > best.score) best = { step, score };
     }
     const { a, b } = RoutePlanner.laneLine(best.step, 0);
-    const p = Point.lerp(a, b, Math.min(0.15, m(6) / a.distanceTo(b)));
+    const p = Point.lerp(a, b, fraction ?? Math.min(0.15, m(6) / a.distanceTo(b)));
     return { x: p.x, y: p.y, angle: b.subtract(a).angle() };
   }
 

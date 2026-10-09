@@ -113,12 +113,15 @@ export class RoutePlanner {
    * length at which each step begins.
    */
   buildPath(steps, lane) {
-    const lines = steps.map((s) => RoutePlanner.laneLine(s, lane));
+    // `lane` is one lane index for every step, or an array with one per step
+    // (a lane connection across a junction can change lanes).
+    const laneAt = (i) => (Array.isArray(lane) ? lane[Math.min(i, lane.length - 1)] : lane);
+    const lines = steps.map((s, i) => RoutePlanner.laneLine(s, laneAt(i)));
     const points = [lines[0].a];
     const stepIndices = [0];
 
     for (let i = 0; i < lines.length - 1; i++) {
-      const arc = this.#fillet(steps[i], lines[i], steps[i + 1], lines[i + 1], lane);
+      const arc = this.#fillet(steps[i], lines[i], steps[i + 1], lines[i + 1], laneAt(i), laneAt(i + 1));
       points.push(...arc);
       stepIndices.push(points.length - 1 - Math.floor(arc.length / 2));
     }
@@ -137,7 +140,7 @@ export class RoutePlanner {
    * (where the inside road edges meet) and stays near its own lane, but never
    * tighter than a car can physically steer.
    */
-  #fillet(step1, line1, step2, line2, lane) {
+  #fillet(step1, line1, step2, line2, lane1, lane2) {
     const d1 = line1.b.subtract(line1.a).normalize();
     const d2 = line2.b.subtract(line2.a).normalize();
     const turn = Math.atan2(d1.cross(d2), d1.dot(d2)); // positive = right turn
@@ -154,8 +157,8 @@ export class RoutePlanner {
     };
 
     // Inner corner: where the road edges on the inside of the turn meet.
-    const toInner1 = (side * step1.road.width) / 2 - RoutePlanner.travelOffset(step1, lane);
-    const toInner2 = (side * step2.road.width) / 2 - RoutePlanner.travelOffset(step2, lane);
+    const toInner1 = (side * step1.road.width) / 2 - RoutePlanner.travelOffset(step1, lane1);
+    const toInner2 = (side * step2.road.width) / 2 - RoutePlanner.travelOffset(step2, lane2);
     const innerCorner = meet(shifted(line1, n1, toInner1), shifted(line2, n2, toInner2));
 
     const centre = (r) => meet(shifted(line1, n1, side * r), shifted(line2, n2, side * r));

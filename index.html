@@ -26,6 +26,7 @@
         <button data-action="weather" title="Road surface grip: dry / wet / icy (Y)">Road: <span class="value" data-label="weather">Dry</span> <kbd>Y</kbd></button>
         <button data-toggle="collisionDebug" title="Collision debug view (C)">Collisions <kbd>C</kbd></button>
         <button data-toggle="trafficDebug" title="Traffic routes, steering targets and leaders (X)">Routes <kbd>X</kbd></button>
+        <button data-toggle="showLanes" title="Lane IDs, centrelines and lane connections (L)">Lanes <kbd>L</kbd></button>
         <button data-toggle="ghost" title="Player car ignores collisions (N)">Ghost <kbd>N</kbd></button>
         <button data-toggle="paused" title="Pause the simulation (P)">Pause <kbd>P</kbd></button>
       </div>
@@ -69,10 +70,51 @@
       </div>
       <label class="row"><input type="checkbox" data-road="oneWay" /> One-way <kbd>O</kbd></label>
       <div class="row">
+        <span>Type</span>
+        <select data-road="type">
+          <option value="street">Street</option>
+          <option value="highway">Highway</option>
+          <option value="ramp">Ramp</option>
+        </select>
+      </div>
+      <div class="row">
+        <span>Limit</span>
+        <select data-road="speedLimit">
+          <option value="">Default</option>
+          <option value="20">20 km/h</option>
+          <option value="30">30 km/h</option>
+          <option value="40">40 km/h</option>
+          <option value="50">50 km/h</option>
+          <option value="60">60 km/h</option>
+          <option value="70">70 km/h</option>
+          <option value="80">80 km/h</option>
+          <option value="100">100 km/h</option>
+          <option value="110">110 km/h</option>
+          <option value="130">130 km/h</option>
+        </select>
+        <output data-field="limit"></output>
+      </div>
+      <label class="row"><input type="checkbox" data-road="crossing" /> Pedestrian crossing</label>
+      <div class="row">
         <button data-road="reverse" title="Swap start and end (R)">Reverse <kbd>R</kbd></button>
         <button data-road="delete" class="danger" title="Delete this road (Del)">Delete</button>
       </div>
       <p class="hint"><span class="dot start"></span> start &nbsp; <span class="dot end"></span> end — forward lanes run start → end on the right.</p>
+    </aside>
+
+    <aside id="junction-panel" class="panel road-panel" hidden>
+      <h2>Junction</h2>
+      <dl>
+        <dt>Type</dt><dd data-junction="kind"></dd>
+        <dt>Roads</dt><dd data-junction="arms"></dd>
+        <dt>Movements</dt><dd data-junction="movements"></dd>
+        <dt>Conflicts</dt><dd data-junction="conflicts"></dd>
+      </dl>
+      <div class="row">
+        <span>Control</span>
+        <select data-junction="control"></select>
+      </div>
+      <p class="hint">Automatic: lights where avenues cross, all-way stops where streets cross, stop or yield signs on the side road of a T.</p>
     </aside>
 
     <aside id="car-panel" class="panel car-panel" hidden>
@@ -90,6 +132,8 @@
         <dt>Physics</dt><dd data-hud="model"></dd>
         <dt>Collisions</dt><dd data-hud="hits"></dd>
         <dt>Driver</dt><dd data-hud="driver"></dd>
+        <dt>Speed limit</dt><dd data-hud="limit"></dd>
+        <dt>Violations</dt><dd data-hud="violations"></dd>
       </dl>
       <div class="row">
         <button data-action="resetCar" title="Put the car back at the start (R)">Reset car <kbd>R</kbd></button>
@@ -233,6 +277,8 @@
       <ul>
         <li>Click a road to select it</li>
         <li><kbd>+</kbd>/<kbd>−</kbd> lanes · <kbd>O</kbd> one-way · <kbd>R</kbd> reverse</li>
+        <li>Panel: road type, speed limit, pedestrian crossing</li>
+        <li>Click a junction node to choose lights / stop / yield</li>
       </ul>
       <h3>Drive mode <kbd>3</kbd></h3>
       <ul>
@@ -244,7 +290,7 @@
       <ul>
         <li><kbd>T</kbd> traffic · <kbd>[</kbd>/<kbd>]</kbd> fewer / more vehicles</li>
         <li><kbd>M</kbd> physics model · <kbd>Y</kbd> dry / wet / icy road</li>
-        <li><kbd>C</kbd> collision debug · <kbd>X</kbd> traffic routes</li>
+        <li><kbd>C</kbd> collision debug · <kbd>X</kbd> traffic routes · <kbd>L</kbd> lanes</li>
         <li><kbd>N</kbd> ghost (no collisions) · <kbd>P</kbd> pause</li>
       </ul>
       <h3>Train mode <kbd>4</kbd></h3>

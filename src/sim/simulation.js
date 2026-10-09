@@ -8,6 +8,7 @@ import { m } from '../car/units.js';
 import { CollisionWorld } from '../collision/collisionWorld.js';
 import { clamp } from '../math/utils.js';
 import { SensorSuite } from '../sensors/sensorSuite.js';
+import { City } from '../city/city.js';
 import { Point } from '../primitives/point.js';
 import { RoutePlanner } from '../traffic/routePlanner.js';
 import { TrafficManager } from '../traffic/trafficManager.js';
@@ -27,13 +28,15 @@ export const WEATHER = ['dry', 'wet', 'icy'];
  * After every substep collisions are resolved.
  */
 export class Simulation {
-  constructor(network, { trafficCount = 12, seed = 7 } = {}) {
+  constructor(network, { trafficCount = 12, seed = 7, city = true } = {}) {
     this.network = network;
     this.world = new CollisionWorld();
     this.traffic = new TrafficManager({ count: trafficCount, seed });
     this.player = new Car({ kind: 'player', color: '#ffd54a' });
     this.skids = new SkidMarks();
     this.sensors = new SensorSuite(this.player, this.world);
+    this.cityEnabled = city; // Phase 6: junction rules, lights, signs, crossings
+    this.city = null;
     this.autopilot = null; // a Brain driving the player's car
     this.autopilotRoute = null; // Navigator for navigating brains
     this.routeRng = createRng(5);
@@ -74,6 +77,8 @@ export class Simulation {
     const first = this.builtVersion === -1;
     const { roads, borders } = this.network;
     this.world.setRoads(this.network.surfaces(), borders);
+    this.city = this.cityEnabled && roads.length ? new City(this.network, this.network.graph) : null;
+    this.traffic.setCity(this.city);
     this.traffic.setRoads(roads, [this.player]);
     this.builtVersion = this.network.builtVersion;
     if (first) this.resetPlayer();
@@ -134,7 +139,7 @@ export class Simulation {
    * road without sharp turns (the same place training starts from).
    */
   resetPlayer() {
-    const spawn = Trainer.chooseSpawn(this.network.roads);
+    const spawn = Trainer.chooseSpawn(this.network.roads, { fraction: 0.3 });
     if (!spawn) this.player.teleport(0, 0, 0);
     else this.player.teleport(spawn.x, spawn.y, spawn.angle);
     this.player.collisionCount = 0;
@@ -170,6 +175,7 @@ export class Simulation {
     const start = performance.now();
 
     this.player.input = { ...NO_INPUT, ...playerInput };
+    this.city?.update(dt, this.time, this.cars, this.player);
     this.traffic.update(dt, this.cars);
 
     const cars = this.cars;
@@ -229,14 +235,14 @@ export class Simulation {
 
   // ---- drawing --------------------------------------------------------------
 
-  draw(ctx, { collisionDebug = false, trafficDebug = false, showSensors = false, training = false, pixel = 1 } = {}) {
+  draw(ctx, { collisionDebug = false, trafficDebug = false, showSensors = false, showLanes = false, pixel = 1 } = {}) {
+    this.city?.draw(ctx, pixel, { lanes: showLanes });
     this.skids.draw(ctx);
     if (this.autopilotRoute) {
       this.autopilotRoute.path.draw(ctx, { color: 'rgba(48, 209, 88, 0.55)', width: 2.5 * pixel, dash: [10 * pixel, 8 * pixel] });
     }
     if (trafficDebug) this.#drawTrafficDebug(ctx, pixel);
     for (const car of this.cars) {
-      if (training && car === this.player) continue; // parked out of the way while training
       const hitRecently = this.time - (car.lastContactTime ?? -Infinity) < 0.25;
       const highlight = collisionDebug ? (hitRecently ? '#ff3b30' : 'rgba(80, 255, 140, 0.9)') : null;
       car.draw(ctx, { highlight });

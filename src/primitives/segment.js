@@ -3,19 +3,24 @@ import { Point } from './point.js';
 
 /**
  * A straight line between two points. In the road graph a Segment is an edge
- * and also carries the road attributes used by the generator: the lane count
- * and whether traffic flows one way (from p1 to p2).
+ * and also carries the road attributes used by the generator: the lane count,
+ * whether traffic flows one way (from p1 to p2), the road type (street,
+ * highway, ramp), an optional speed limit in km/h (null = the type's
+ * default) and whether it has a pedestrian crossing in the middle.
  */
 export class Segment {
-  constructor(p1, p2, { lanes = 2, oneWay = false } = {}) {
+  constructor(p1, p2, { lanes = 2, oneWay = false, type = 'street', speedLimit = null, crossing = false } = {}) {
     this.p1 = p1;
     this.p2 = p2;
     this.lanes = lanes;
     this.oneWay = oneWay;
+    this.type = type;
+    this.speedLimit = speedLimit;
+    this.crossing = crossing;
   }
 
   get attributes() {
-    return { lanes: this.lanes, oneWay: this.oneWay };
+    return { lanes: this.lanes, oneWay: this.oneWay, type: this.type, speedLimit: this.speedLimit, crossing: this.crossing };
   }
 
   length() {

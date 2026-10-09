@@ -7,6 +7,7 @@ import { DebugOverlay, drawGrid, FpsCounter } from './engine/debug.js';
 import { Input, MouseButton } from './engine/input.js';
 import { GameLoop } from './engine/loop.js';
 import { createDemoGraph } from './data/demo.js';
+import { createCityGraph } from './data/city.js';
 import { EditorMode, GraphEditor } from './graph/graphEditor.js';
 import { downloadGraph, loadGraph, readGraphFile, saveGraph } from './graph/storage.js';
 import { RoadNetwork } from './road/roadNetwork.js';
@@ -27,7 +28,9 @@ const canvas = document.getElementById('world');
 const ctx = canvas.getContext('2d');
 const input = new Input(canvas);
 const camera = new Camera();
-const graph = loadGraph() ?? createDemoGraph();
+const graph = loadGraph() ?? createCityGraph();
+const DEMOS = [createCityGraph, createDemoGraph];
+let demoIndex = 0;
 const network = new RoadNetwork(graph);
 const editor = new GraphEditor(graph, { camera, input, laneWidth: network.options.laneWidth });
 const sim = new Simulation(network, { trafficCount: 12 });
@@ -44,7 +47,7 @@ const dashboard = new TrainingDashboard(document.getElementById('training-panel'
 const trainingView = new TrainingView();
 const renderOff = document.querySelector('[data-render-off]');
 
-const view = { showGrid: true, showGraph: true, debugGeometry: false, collisionDebug: false, trafficDebug: false };
+const view = { showGrid: true, showGraph: true, debugGeometry: false, collisionDebug: false, trafficDebug: false, showLanes: false };
 let pixelRatio = 1;
 let panning = false;
 let savedVersion = graph.version;
@@ -54,6 +57,7 @@ const flag = (get, set) => ({ get, set });
 const controls = new Controls({
   editor,
   network,
+  getCity: () => sim.city,
   flags: {
     snapToGrid: flag(() => editor.snapToGrid, (v) => (editor.snapToGrid = v)),
     showGrid: flag(() => view.showGrid, (v) => (view.showGrid = v)),
@@ -63,13 +67,14 @@ const controls = new Controls({
     traffic: flag(() => sim.trafficEnabled, (v) => sim.setTrafficEnabled(v)),
     collisionDebug: flag(() => view.collisionDebug, (v) => (view.collisionDebug = v)),
     trafficDebug: flag(() => view.trafficDebug, (v) => (view.trafficDebug = v)),
+    showLanes: flag(() => view.showLanes, (v) => (view.showLanes = v)),
     ghost: flag(() => sim.ghost, (v) => (sim.ghost = v)),
     paused: flag(() => sim.paused, (v) => (sim.paused = v)),
     showSensors: flag(() => sensorPanel.visible, (v) => sensorPanel.toggle(v)),
   },
   actions: {
     fit: () => camera.fit(graph.boundingBox()),
-    demo: () => replaceGraph(createDemoGraph()),
+    demo: () => replaceGraph(DEMOS[(demoIndex = (demoIndex + 1) % DEMOS.length)]()),
     clear: () => graph.clear(),
     export: () => downloadGraph(graph),
     import: async (file) => {
@@ -150,6 +155,7 @@ function handleShortcuts() {
   if (k('KeyY')) sim.cycleWeather();
   if (k('KeyC')) view.collisionDebug = !view.collisionDebug;
   if (k('KeyX')) view.trafficDebug = !view.trafficDebug;
+  if (k('KeyL')) view.showLanes = !view.showLanes;
   if (k('KeyN')) sim.ghost = !sim.ghost;
   if (k('KeyP')) {
     if (training() && dashboard.running) dashboard.setPaused(!dashboard.runner.paused);
@@ -268,6 +274,10 @@ function update(dt, rawDelta) {
   overlay.set('Sensors', `${sim.sensors.preset} · ${sim.sensors.sensors.filter((s) => s.status === 'ok').length}/${sim.sensors.sensors.length} ok`);
   if (!dashboard.snapshot) overlay.values.delete('Training');
   else overlay.set('Training', `gen ${dashboard.snapshot.stats.generation} · ${dashboard.snapshot.course} · ${Math.round(dashboard.runner.stepsPerSecond)} steps/s`);
+  if (sim.city) {
+    const c = sim.city.stats();
+    overlay.set('City', `${c.intersections} junctions (${c.signals} signalised) · ${c.lanes} lanes · ${c.occupants} in boxes · ${c.waiting} waiting · ${c.pedestrians} pedestrians`);
+  }
   overlay.set('Sim', `${sim.stepMs.toFixed(2)} ms, ${sim.substeps} substep${sim.substeps > 1 ? 's' : ''}${sim.paused ? ' (paused)' : ''}`);
   overlay.update(rawDelta);
 
@@ -296,6 +306,7 @@ function render() {
     collisionDebug: view.collisionDebug,
     trafficDebug: view.trafficDebug,
     showSensors: sensorPanel.visible,
+    showLanes: view.showLanes,
     pixel: 1 / camera.zoom,
   });
   editor.draw(ctx, { showGraph: view.showGraph });

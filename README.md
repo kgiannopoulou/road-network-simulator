@@ -2,19 +2,21 @@
 
 A 2D road network simulator built from scratch with plain HTML, CSS and JavaScript ES modules on a single `<canvas>`. There is no framework, no bundler and no runtime dependencies.
 
-The repository currently holds five phases:
+The repository currently holds six phases:
 
 - **Phase 1: simulator foundation.** The engine, a geometry library, an editable road graph, and procedural road generation with lanes, centre lines and direction arrows.
 - **Phase 2: cars.** A drivable car with a bicycle-model physics engine, SAT collision detection against road borders and other cars, and traffic vehicles that follow routes, keep their distance and get around obstacles.
 - **Phase 3: sensors.** A ray sensor, a spinning LiDAR, radar, GPS and an IMU behind one standard API. Each sensor can be given noise, latency, limited range, dropped measurements and failures, so a future autonomous driver can't rely on perfect information.
 - **Phase 4: first self-driving AI.** A neural network written from scratch, connected to the car's sensors and controls, and trained by a genetic algorithm on populations of up to 500 cars.
 - **Phase 5: training system.** A detailed fitness function, a six-course curriculum, a training dashboard, and fast simulation up to "as fast as possible" in a Web Worker.
+- **Phase 6: city simulation.** Junctions with lane connections, turning lanes, yielding and occupancy. Traffic lights, stop and yield signs, speed limits and zebra crossings with pedestrians. Lane IDs, lane changes, overtaking and merging. A highway with ramps, exits and acceleration lanes.
 
 **Milestone #1 reached:** a manually drivable traffic simulator.
 **Milestone #2 reached:** cars learn basic road following.
 **Milestone #3 reached:** an actual AI-training environment.
+**Milestone #4 reached:** a small functioning city traffic simulation.
 
-![Traffic with sensor debug view](docs/screenshot-traffic.png)
+![The city](docs/screenshot-city.png)
 
 ## Quick start
 
@@ -44,6 +46,7 @@ npm test                      # unit tests (Node ≥ 22, built-in node:test, no 
 | 3. Sensors | 9–12 | ✅ |
 | 4. First self-driving AI | 13–16 | ✅ |
 | 5. Training system | 17–20 | ✅ |
+| 6. City simulation | 21–24 | ✅ |
 
 ## Phase 1: simulator foundation
 
@@ -174,6 +177,8 @@ The tests check the model against its own equations. At low speed the car drives
 - **Other tools.** `N` turns on ghost mode (the player ignores collisions). The HUD counts collisions, and a scrape counts once.
 
 ### Week 8: traffic vehicles (`src/traffic/`)
+
+![Traffic with the routes view](docs/screenshot-traffic.png)
 
 Traffic is **not AI**. Each vehicle gets a planned route and a rule-based driver that only touches the pedals and steering wheel, so traffic obeys exactly the same physics as the player.
 
@@ -428,6 +433,109 @@ A `FitnessEvaluator` per car scores every step and keeps each term separately. T
 
 **Milestone #3: an actual AI-training environment.** You can pick what to train on, choose how fast, watch or not, measure it, and keep the best brain.
 
+## Phase 6: city simulation
+
+| Week | Goal | Status |
+| --- | --- | --- |
+| 21 | **Intersections:** T-junctions, four-way intersections, turning lanes, lane connections, yielding rules, intersection occupancy | ✅ |
+| 22 | **Traffic lights and signs:** red/yellow/green lights, stop signs, yield signs, speed-limit signs, pedestrian crossings, vehicle responses | ✅ |
+| 23 | **Multi-lane roads:** lane IDs, lane centrelines, lane changes, overtaking, merging | ✅ |
+| 24 | **Highway systems:** ramps, exits, high-speed roads, merging traffic | ✅ |
+
+![A signalised junction](docs/screenshot-junction.png)
+
+The default map is now a small city (the **Demo** button switches between it and the classic map). It has:
+
+- a grid of two-lane streets and four-lane avenues;
+- a one-way street, a 30 km/h zone and three zebra crossings;
+- a two-carriageway highway (110 km/h) with exits, on-ramps and acceleration lanes;
+- a frontage road, so no ramp crosses the highway at grade.
+
+Everything in `src/city/` is DOM-free and built from the road network by `City`. `Simulation` rebuilds it whenever you edit the map.
+
+### Week 21: junctions (`city/junction.js`)
+
+- **Kinds.** Every node becomes a `Junction` of one of these kinds:
+  - **continuation:** two roads, possibly with a lane drop or gain;
+  - **T** and **cross** (four-way), or **multi** (five or more);
+  - **merge:** one-way roads joining, e.g. an on-ramp;
+  - **diverge:** a one-way road splitting, e.g. an exit.
+- **Lane connections.** Each junction lists its *movements*: in-arm and lane → out-arm and lane, with a turn type. Lanes are numbered from the right-hand kerb.
+  - **Turning lanes:** right turns only from the right lane and left turns only from the left lane. With three or more lanes the left lane is a dedicated left-turn lane. Turn arrows are painted on every approach lane.
+  - **Merges** stack incoming lanes from the right: the ramp feeds the acceleration lane and the highway lanes shift left.
+  - **Diverges** only let the right-hand lane take the exit.
+  - **Lane drops** on freeways happen on the right (acceleration lanes end), on streets on the left.
+  - Hairpins sharper than 135° aren't drivable movements.
+- **Conflicts.** Two movements conflict when their paths through the box come within 2.4 m, sampled every 0.5 m along both paths.
+- **Occupancy.** A car must be *granted* its movement before entering the box, and no two granted movements may conflict. A car reserves its movement once its braking distance reaches the stop line, and releases it once the junction is behind it and it is clear of the box.
+- **Yielding rules**, per approach:
+
+  | Rule | Behaviour |
+  | --- | --- |
+  | Priority road | Go if the box is free. Left turns yield to the oncoming main road. |
+  | Yield sign | Give way to conflicting priority traffic arriving within 4 s |
+  | Stop sign | Full stop at the line for 0.6 s, then as yield. At an **all-way stop**, first come, first served. |
+  | Priority to the right | Give way to conflicting traffic from the right (with a deadlock breaker) |
+  | Lights | See Week 22 |
+
+- **Automatic controls:**
+  - lights where avenues cross;
+  - all-way stops where streets cross;
+  - a stop sign on the side road of a T on an avenue, a yield sign otherwise;
+  - free flow at merges and diverges.
+
+  In **Roads** mode, click a junction node to override its control (lights, all-way stop, stop or yield on the minor road, priority to the right). The choice is saved with the map.
+
+### Week 22: lights and signs (`city/signals.js`, `city/crossings.js`)
+
+- **Signals.** A fixed-time `SignalController` groups opposite approaches into phases: green 12 s (16 s on the main road), yellow 3 s, all-red 1.5 s, with offsets so neighbouring lights aren't in step.
+  - Left turns on green are *permitted*: they yield to oncoming traffic, and a left-turner waiting at the line clears the junction during the yellow and all-red.
+  - At yellow a car only goes if it can no longer stop comfortably.
+- **Signs and markings.** Stop signs (octagon, solid line), yield signs (triangle, dashed line) and signal heads stand on the kerb of each approach.
+- **Speed limits.** Every road has a limit: its own, or its type's default (street 50, avenue 60, ramp 60, highway 110). Signs are drawn where it matters. Each traffic driver aims for 92–108 % of the limit and slows *before* entering a slower road.
+- **Pedestrian crossings.** A road can have a zebra crossing (Roads mode → *Pedestrian crossing*). Pedestrians walk across every few seconds, and cars stop before the crossing while anyone is on it, unless they are already too close to stop.
+- **Your car.** The HUD shows the current speed limit (red when you are more than 10 % over). It counts red lights you run and seconds spent speeding.
+
+### Week 23: multi-lane roads (`city/city.js`, `traffic/laneIndex.js`, `traffic/trafficDriver.js`)
+
+![Lane IDs and connections](docs/screenshot-lanes.png)
+
+- **The lane graph.** Every lane has an ID (`L12F0`: road 12, forward direction, lane 0 from the right), a centreline, left and right neighbours, a speed limit and its successors through the next junction. The **Lanes** view (`L`) draws the IDs, centrelines and connections, coloured by turn.
+- **Lane index.** Rebuilt every frame: each car (traffic, and the player located by geometry) is placed on a carriageway with its lane and position. Finding the leader and follower in any lane is then a sorted-list lookup.
+- **Routes and lanes.** Paths follow the lane connections across junctions (`RoutePlanner.buildPath` accepts a lane per step).
+- **Lane changes.** A lane change steers to a sideways offset that grows only while the car rolls forward. It **aborts** and steers back if someone moves alongside in the target lane.
+  - **Mandatory:** the next turn, exit or lane drop needs another lane. The closer the end, the smaller the gap the driver accepts. If it still can't merge it waits at the end of the lane. If it reaches the stop line in a lane that can't make its turn, it **re-routes** and takes a turn that lane can make.
+  - **Discretionary (MOBIL).** Change when the acceleration gained in the other lane (from IDM against that lane's leader) beats a threshold and the new follower wouldn't have to brake harder than 3 m/s². A bias towards the right gives **overtaking** followed by **keeping right**.
+- **Merging.** Lane drops and the highway acceleration lanes force a mandatory merge with gap acceptance.
+
+### Week 24: highways (`road/roadTypes.js`, `data/city.js`)
+
+![Highway interchange](docs/screenshot-highway.png)
+
+- **Road types.** Roads have a type: **street**, **highway** or **ramp**. Highways and ramps get darker asphalt, solid edge lines, longer lane dashes and higher default limits. Change it in Roads mode.
+- **Grade separation.** Highways never meet streets at grade, only through ramps:
+  - a **diverge** (exit from the right lane);
+  - the ramp to a signalised junction with the avenue;
+  - an on-ramp **merge** into an acceleration lane that ends 120 m later, so ramp traffic must find a gap.
+- **Ramp geometry.** Ramps join at 25–35°. A first version at 70° made turning arcs swing into the next lane.
+
+### Making it actually work
+
+The checks below run 40 to 70 cars for several minutes on the city map, and each problem they found was fixed:
+
+| Problem | Fix |
+| --- | --- |
+| A car stopped at its line got its reservation released in the same frame (it was already "far" from the centre) | Release only once the junction is behind the car |
+| Driving through two junctions overwrote the first reservation | Track a set of held junctions |
+| Straight movements never conflicted (a long segment with no points inside the box) | Resample every movement every 0.5 m |
+| The Phase 2 deadlock breaker made queued cars drive into the car ahead at red lights | Waiting at a light, sign or crossing (or behind someone who is) isn't stuck; the breaker only fires on real waiting cycles |
+| A lane change completed while standing still, so the car was "in" a lane it wasn't in | Sideways progress scales with forward speed |
+| Left turns across a continuous oncoming stream waited forever | Clear on yellow, as real drivers do |
+
+The regression test runs 40 cars on the city for a minute with **zero collisions**, nobody stuck, highway speeds above 80 km/h, and mandatory, overtaking and keep-right lane changes all happening.
+
+**Milestone #4: a small functioning city traffic simulation.**
+
 ## Controls
 
 | Input | Action |
@@ -452,7 +560,8 @@ A `FitnessEvaluator` per car scores every step and keeps each term separately. T
 
 | Input | Action |
 | --- | --- |
-| Click a road | Select it (a side panel shows its details) |
+| Click a road | Select it: lanes, direction, type, speed limit, crossing |
+| Click a junction node | Choose its control: lights, all-way stop, stop/yield signs, priority to the right |
 | `+` / `−` | Add / remove a lane |
 | `O` | Toggle one-way |
 | `R` | Reverse direction |
@@ -478,6 +587,7 @@ A `FitnessEvaluator` per car scores every step and keeps each term separately. T
 | `M` | Physics model: basic (week 5) / bicycle (week 6) |
 | `Y` | Road surface: dry / wet / icy |
 | `C` | Collision debug view |
+| `L` | Lanes view: lane IDs, centrelines, connections |
 | `X` | Traffic routes view |
 | `N` | Ghost mode (player ignores collisions) |
 | `P` | Pause (in Train mode: pause training) |
@@ -498,24 +608,25 @@ src/
   math/                 utils.js · matrix.js
   primitives/           point.js · segment.js · polygon.js · envelope.js
   graph/                graph.js · graphEditor.js · storage.js
-  road/                 road.js (lane layout) · roadNetwork.js (generation + rendering)
+  road/                 road.js (lane layout) · roadNetwork.js (generation + rendering, kerb fillets) · roadTypes.js
   car/                  physics.js (basic + bicycle model) · car.js · units.js · keyboardControls.js · skidMarks.js
   collision/            sat.js · spatialHash.js · collisionWorld.js (detection + response)
-  traffic/              path.js · routePlanner.js · trafficDriver.js (Stanley + IDM) · trafficManager.js
+  traffic/              path.js · routePlanner.js · trafficDriver.js (Stanley + IDM + MOBIL) · trafficManager.js · laneIndex.js
   sensors/              sensor.js (common API) · raycast.js · raySensor.js · lidar.js · radar.js · gps.js · imu.js
                         imperfections.js · noise.js · sensorSuite.js
-  sim/simulation.js     cars, substepping, collisions, traffic, sensors, debug drawing
+  city/                 city.js (junctions, lane graph, violations, drawing) · junction.js · signals.js · crossings.js
+  sim/simulation.js     cars, substepping, collisions, city, traffic, sensors, debug drawing
   ai/                   network.js · activations.js · brain.js · genetics.js · trainer.js · coverage.js · championStore.js
   training/             courses.js · trainingWorld.js · navigator.js · fitness.js · environments.js · session.js
                         speed.js · runner.js · worker.js · trainingView.js
   ui/                   controls.js · hud.js · sensorPanel.js · trainingDashboard.js · lineChart.js · networkView.js
-  data/demo.js          sample network
+  data/                 city.js (Phase 6 city) · demo.js (classic sample network)
 tests/
-  unit/                 node:test suites: geometry, graph, roads, car physics, collisions, traffic, sensors, AI, training
+  unit/                 node:test suites: geometry, graph, roads, car physics, collisions, traffic, sensors, AI, training, city
   visual/               interactive geometry test gallery
 ```
 
-Every module under `math/`, `primitives/`, `graph/graph.js`, `road/`, `car/`, `collision/`, `traffic/`, `sensors/`, `ai/`, `training/` (except the worker glue) and `sim/` is DOM-free. The unit tests run them directly in Node, and later phases can reuse them in workers.
+Every module under `math/`, `primitives/`, `graph/graph.js`, `road/`, `car/`, `collision/`, `traffic/`, `sensors/`, `ai/`, `training/` (except the worker glue), `city/` and `sim/` is DOM-free. The unit tests run them directly in Node, and later phases can reuse them in workers.
 
 ## Design notes
 

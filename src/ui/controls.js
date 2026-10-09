@@ -1,3 +1,4 @@
+import { CONTROL_LABELS, CONTROLS } from '../city/junction.js';
 import { EditorMode } from '../graph/graphEditor.js';
 
 /**
@@ -5,9 +6,10 @@ import { EditorMode } from '../graph/graphEditor.js';
  * but only touches the DOM when the displayed values actually change.
  */
 export class Controls {
-  constructor({ editor, network, flags, actions }) {
+  constructor({ editor, network, flags, actions, getCity = () => null }) {
     this.editor = editor;
     this.network = network;
+    this.getCity = getCity;
     this.flags = flags; // { name: { get(), set(value) } }
     this.actions = actions;
     this.lastSignature = '';
@@ -15,6 +17,7 @@ export class Controls {
     this.modeButtons = document.querySelectorAll('[data-mode]');
     this.toggleButtons = document.querySelectorAll('[data-toggle]');
     this.roadPanel = document.getElementById('road-panel');
+    this.junctionPanel = document.getElementById('junction-panel');
     this.helpPanel = document.getElementById('help');
     this.status = document.getElementById('status');
     this.importInput = document.getElementById('import-file');
@@ -59,6 +62,24 @@ export class Controls {
       const seg = this.editor.selectedSegment;
       if (seg) this.editor.setOneWay(seg, e.target.checked);
     });
+    this.roadPanel.querySelector('[data-road="type"]').addEventListener('change', (e) => {
+      const seg = this.editor.selectedSegment;
+      if (seg) this.editor.setType(seg, e.target.value);
+    });
+    this.roadPanel.querySelector('[data-road="speedLimit"]').addEventListener('change', (e) => {
+      const seg = this.editor.selectedSegment;
+      if (seg) this.editor.setSpeedLimit(seg, Number(e.target.value) || null);
+    });
+    this.roadPanel.querySelector('[data-road="crossing"]').addEventListener('change', (e) => {
+      const seg = this.editor.selectedSegment;
+      if (seg) this.editor.setCrossing(seg, e.target.checked);
+    });
+    const control = this.junctionPanel.querySelector('[data-junction="control"]');
+    control.innerHTML = CONTROLS.map((c) => `<option value="${c}">${CONTROL_LABELS[c]}</option>`).join('');
+    control.addEventListener('change', (e) => {
+      const node = this.editor.selectedJunction;
+      if (node) this.editor.graph.setControl(node, e.target.value === 'auto' ? null : e.target.value);
+    });
 
     // Buttons shouldn't keep keyboard focus, otherwise Space would "click" them.
     document.querySelectorAll('button').forEach((b) => b.addEventListener('mouseup', () => b.blur()));
@@ -100,7 +121,8 @@ export class Controls {
     const signature = [
       editor.mode,
       flagValues.join(','),
-      road ? `${road.laneCount}/${road.oneWay}/${Math.round(seg.length())}/${road.forwardLanes}` : '-',
+      road ? `${road.laneCount}/${road.oneWay}/${Math.round(seg.length())}/${road.forwardLanes}/${road.type}/${road.speedLimitKmh}/${seg.crossing}` : '-',
+      editor.mode === EditorMode.ROAD && editor.selectedJunction ? `j${this.network.graph.version}` : '',
       editor.selected ? 'sel' : '',
       editor.hovered ? 'hov' : '',
       editor.hoveredSegment ? 'hseg' : '',
@@ -121,9 +143,30 @@ export class Controls {
       set('backward', road.backwardLanes);
       set('lanes', road.laneCount);
       this.roadPanel.querySelector('[data-road="oneWay"]').checked = road.oneWay;
+      this.roadPanel.querySelector('[data-road="type"]').value = road.type;
+      this.roadPanel.querySelector('[data-road="speedLimit"]').value = seg.speedLimit ? String(seg.speedLimit) : '';
+      set('limit', `${road.speedLimitKmh} km/h`);
+      this.roadPanel.querySelector('[data-road="crossing"]').checked = !!seg.crossing;
     }
+    this.#syncJunction();
 
     this.status.innerHTML = this.#statusText();
+  }
+
+  #syncJunction() {
+    const node = this.editor.mode === EditorMode.ROAD ? this.editor.selectedJunction : null;
+    const junction = node ? this.getCity()?.junctionAt(node) : null;
+    this.junctionPanel.hidden = !junction;
+    if (!junction) return;
+    const set = (field, value) => (this.junctionPanel.querySelector(`[data-junction="${field}"]`).textContent = value);
+    const kinds = { T: 'T-junction', cross: 'Four-way', multi: 'Multi-way', merge: 'Merge', diverge: 'Diverge' };
+    set('kind', `${kinds[junction.kind] ?? junction.kind} · ${CONTROL_LABELS[junction.control]}`);
+    set('arms', String(junction.arms.length));
+    set('movements', String(junction.movements.size));
+    let conflicts = 0;
+    for (const mv of junction.movements.values()) conflicts += mv.conflicts.size;
+    set('conflicts', String(conflicts / 2));
+    this.junctionPanel.querySelector('[data-junction="control"]').value = junction.override ?? 'auto';
   }
 
   #statusText() {
@@ -137,7 +180,9 @@ export class Controls {
     if (e.mode === EditorMode.ROAD) {
       return e.selectedSegment
         ? '<b>Roads</b> · <kbd>+</kbd>/<kbd>−</kbd> lanes · <kbd>O</kbd> one-way · <kbd>R</kbd> reverse · right click to deselect'
-        : '<b>Roads</b> · click a road to edit its lanes and direction';
+        : e.selectedJunction
+          ? '<b>Roads</b> · choose how this junction is controlled · right click to deselect'
+          : '<b>Roads</b> · click a road to edit its lanes, type, speed limit and crossing · click a junction for its controls';
     }
     if (e.dragging) return '<b>Graph</b> · moving node — release to drop';
     if (e.selected) {

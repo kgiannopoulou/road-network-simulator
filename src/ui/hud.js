@@ -47,6 +47,10 @@ export class Hud {
     set('model', sim.model === PhysicsModel.REALISTIC ? 'Bicycle model' : 'Basic');
     set('hits', String(car.collisionCount));
     set('driver', sim.autopilot ? 'Autopilot' : 'You');
+    const city = sim.city;
+    set('limit', city?.playerLimit ? `${city.playerLimit} km/h${city.playerSpeeding ? ' · too fast!' : ''}` : '–');
+    set('violations', city ? `${city.violations.redLights} red · ${city.violations.speedingTime.toFixed(0)} s speeding` : '–');
+    this.panel.classList.toggle('speeding', !!city?.playerSpeeding);
 
     const lock = car.params.maxSteer;
     this.fields.steerbar.style.setProperty('--steer', (s.steer / lock).toFixed(3));

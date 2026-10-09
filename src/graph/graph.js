@@ -12,6 +12,8 @@ export class Graph {
   constructor(points = [], segments = []) {
     this.points = points;
     this.segments = segments;
+    // Junction control overrides (Phase 6): node → 'signals' | 'allStop' | 'stop' | 'yield' | 'uncontrolled'.
+    this.controls = new Map();
     this.version = 0;
   }
 
@@ -19,8 +21,21 @@ export class Graph {
     const points = (data.points ?? []).map(([x, y]) => new Point(x, y));
     const segments = (data.segments ?? [])
       .filter((s) => points[s.a] && points[s.b] && s.a !== s.b)
-      .map((s) => new Segment(points[s.a], points[s.b], { lanes: s.lanes ?? 2, oneWay: !!s.oneWay }));
-    return new Graph(points, segments);
+      .map(
+        (s) =>
+          new Segment(points[s.a], points[s.b], {
+            lanes: s.lanes ?? 2,
+            oneWay: !!s.oneWay,
+            type: s.type ?? 'street',
+            speedLimit: s.speedLimit ?? null,
+            crossing: !!s.crossing,
+          }),
+      );
+    const graph = new Graph(points, segments);
+    for (const [index, control] of Object.entries(data.controls ?? {})) {
+      if (points[index]) graph.controls.set(points[index], control);
+    }
+    return graph;
   }
 
   toJSON() {
@@ -33,7 +48,11 @@ export class Graph {
         b: index.get(s.p2),
         lanes: s.lanes,
         oneWay: s.oneWay,
+        ...(s.type !== 'street' ? { type: s.type } : {}),
+        ...(s.speedLimit ? { speedLimit: s.speedLimit } : {}),
+        ...(s.crossing ? { crossing: true } : {}),
       })),
+      controls: Object.fromEntries([...this.controls].filter(([p]) => index.has(p)).map(([p, c]) => [index.get(p), c])),
     };
   }
 
@@ -41,6 +60,13 @@ export class Graph {
   load(other) {
     this.points = other.points;
     this.segments = other.segments;
+    this.controls = other.controls ?? new Map();
+    this.touch();
+  }
+
+  setControl(node, control) {
+    if (control) this.controls.set(node, control);
+    else this.controls.delete(node);
     this.touch();
   }
 
@@ -70,6 +96,7 @@ export class Graph {
     for (const seg of this.getSegmentsWithPoint(point)) this.removeSegment(seg);
     const i = this.points.indexOf(point);
     if (i >= 0) this.points.splice(i, 1);
+    this.controls.delete(point);
     this.touch();
   }
 
@@ -168,6 +195,7 @@ export class Graph {
   clear() {
     this.points = [];
     this.segments = [];
+    this.controls = new Map();
     this.touch();
   }
 

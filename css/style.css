@@ -322,6 +322,11 @@ button.confirm {
   background: #ff9f0a;
 }
 
+.car-panel.speeding [data-hud='limit'] {
+  color: var(--danger);
+  font-weight: 600;
+}
+
 .car-panel.hit {
   border-color: var(--danger);
 }

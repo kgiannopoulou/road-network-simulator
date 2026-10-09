@@ -7,7 +7,8 @@ import { RoutePlanner } from './routePlanner.js';
 const STANLEY_GAIN = 2.5; // 1/s
 
 export const DRIVER_DEFAULTS = {
-  desiredSpeed: fromKmh(50),
+  desiredSpeed: fromKmh(50), // the driver's own preference (speed limits cap it)
+  speedCompliance: 1, // multiple of the speed limit the driver aims for
   timeHeadway: 1.4, // s, following distance in time
   minGap: m(2.5), // bumper-to-bumper gap when stopped
   maxAccel: m(1.6),
@@ -17,6 +18,9 @@ export const DRIVER_DEFAULTS = {
   sensorRange: m(50),
   routeLength: 10, // steps planned ahead
   laneChangeSpeed: m(1.6), // lateral speed while changing lane
+  laneChangeThreshold: m(0.3), // MOBIL: acceleration gain needed to change lanes
+  keepRightBias: m(0.4), // MOBIL: extra incentive to move back to the right
+  safeBrake: m(3), // MOBIL: the most a new follower may have to brake
 };
 
 /**
@@ -38,43 +42,64 @@ export function idmAcceleration({ v, v0, gap = Infinity, dv = 0, a, b, s0, T, de
  * lane centre lines and controls the car only through its pedals and steering
  * wheel, so traffic obeys exactly the same physics as the player:
  *
- *   steering   Stanley controller: heading + cross-track error + curvature
- *   speed      IDM towards the desired speed, slowed for curves ahead
- *   following  the nearest car in its lane corridor (also cars predicted to
- *              cross it within ~1 s) becomes the IDM leader
- *   avoidance  stuck behind a slow or stopped car, it moves to a free
- *              adjacent lane going the same way
+ *   steering    Stanley controller: heading + cross-track error + curvature
+ *   speed       IDM towards min(own preference, speed limit), slowed for
+ *               curves and lower limits ahead
+ *   following   the nearest car in its lane corridor becomes the IDM leader
+ *   junctions   (with a City) asks the junction for its movement and stops
+ *               at the line for red lights, stop/yield signs and busy boxes;
+ *               stops for pedestrians on zebra crossings
+ *   lanes       follows lane connections through junctions; changes lane
+ *               when it must (wrong lane for the next turn, lane ending) and
+ *               when it pays (MOBIL: overtaking, keeping right); re-routes
+ *               if it reaches a junction in a lane that can't make its turn
  */
 export class TrafficDriver {
-  constructor(car, planner, { rng = Math.random, lane = 0, ...options } = {}) {
+  constructor(car, planner, { rng = Math.random, lane = 0, city = null, laneIndex = null, ...options } = {}) {
     this.car = car;
     this.planner = planner;
     this.rng = rng;
     this.lane = lane;
+    this.city = city;
+    this.laneIndex = laneIndex ?? city?.laneIndex ?? null;
     this.options = { ...DRIVER_DEFAULTS, ...options };
 
     this.steps = [];
     this.path = null;
     this.stepStarts = [];
+    this.lanePlan = [];
     this.s = 0;
     this.deadEnd = false;
     this.finished = false;
 
     this.leader = null;
+    this.stopFor = null; // the rule currently holding the car: 'junction' | 'crossing' | 'lane' | 'end' | null
     this.shift = 0; // lateral offset while changing lane
     this.shiftTarget = 0;
     this.pendingLane = null;
-    this.slowTime = 0;
+    this.laneChangeReason = null;
+    this.laneTimer = 0;
+    this.entered = new Set(); // junctions we hold a reservation in
     this.blockedTime = 0;
     this.patience = 0;
     this.leaving = false;
     this.stuckTime = 0;
-    this.target = null; // pure pursuit point, for debug drawing
+    this.target = null; // steering point, for debug drawing
   }
 
   /** Put the car `along` units into `step`, at rest, facing its lane. */
   begin(step, along) {
     this.steps = this.planner.extend([step], this.options.routeLength, this.rng);
+    this.#rebuild();
+    this.s = clamp(along, 0, Math.max(0, this.path.length - 1));
+    const p = this.path.pointAt(this.s);
+    this.car.teleport(p.x, p.y, this.path.tangentAt(this.s).angle());
+    this.car.alpha = 0;
+  }
+
+  /** Like begin(), but along a given route (extended at random once it runs out). */
+  followRoute(steps, along) {
+    this.steps = this.planner.extend(steps, Math.max(steps.length, this.options.routeLength), this.rng);
     this.#rebuild();
     this.s = clamp(along, 0, Math.max(0, this.path.length - 1));
     const p = this.path.pointAt(this.s);
@@ -92,6 +117,27 @@ export class TrafficDriver {
     return this.steps[0]?.road.laneWidth ?? 22;
   }
 
+  get currentStep() {
+    return this.steps[this.stepIndex];
+  }
+
+  /** Lane ID of the current lane (Week 23), when driving in a city. */
+  get laneId() {
+    return this.city ? this.city.laneId(this.currentStep, this.lane) : null;
+  }
+
+  /** Where this car is for the lane index: road, direction, s along it, lane(s) it occupies. */
+  laneInfo() {
+    const step = this.currentStep;
+    if (!step) return null;
+    const seg = step.road.segment;
+    const { offset } = seg.projectPoint(this.car.position);
+    const t = clamp(offset, 0, 1);
+    const len = seg.length();
+    const lanes = this.pendingLane !== null ? [this.lane, this.pendingLane] : [this.lane];
+    return { road: step.road, dir: step.dir, s: step.dir > 0 ? t * len : (1 - t) * len, lanes };
+  }
+
   update(dt, cars) {
     const { car, options: o } = this;
     if (!this.path || this.path.length === 0) return;
@@ -100,24 +146,26 @@ export class TrafficDriver {
     const proj = this.path.project(car.position, this.s - m(3), this.s + m(12));
     if (proj) this.s = proj.s;
     if (!this.deadEnd && this.path.length - this.s < m(70)) this.#restartFromCurrentStep(this.options.routeLength / 2);
+    this.#syncLane();
 
     this.patience = Math.max(0, this.patience - dt);
     this.leader = this.#scan(cars);
-    this.#updateLaneChange(dt, cars);
+    this.#updateLanes(dt, cars);
 
-    // Speed: IDM against the leader, or the end of a dead-end route.
-    const v0 = Math.min(o.desiredSpeed, this.#curveLimit());
+    // Speed: IDM against the nearest of the leader and every reason to stop.
+    const v0 = Math.min(this.#speedTarget(), this.#curveLimit());
     let gap = Infinity;
     let dv = 0;
     if (this.leader) {
       gap = this.leader.gap;
       dv = v - this.leader.speed;
     }
-    if (this.deadEnd) {
-      const endGap = this.path.length - this.s - car.length / 2 - m(1);
-      if (endGap < gap) {
-        gap = endGap;
+    this.stopFor = null;
+    for (const stop of this.#stops()) {
+      if (stop.gap < gap) {
+        gap = stop.gap;
         dv = v;
+        this.stopFor = stop.kind;
       }
     }
     const accel = clamp(
@@ -138,10 +186,17 @@ export class TrafficDriver {
       input.back = clamp(-accel / car.params.brakeDecel, 0, 1);
     }
     input.steer = this.#steer();
+    this.#releaseJunction();
 
-    // Two cars politely waiting for each other forever: after a while, go.
+    // Waiting at a red light, a sign or a crossing, or queueing behind
+    // someone who is, is not being stuck.
     const stopped = Math.abs(v) < m(0.3);
-    if (stopped && this.leader?.car.driver) this.blockedTime += dt;
+    const waitingByRule = this.stopFor === 'junction' || this.stopFor === 'crossing' || !!this.leader?.car.driver?.waitingByRule;
+    this.waitingByRule = waitingByRule && stopped;
+
+    // Cars waiting for each other in a circle (a real deadlock, not a queue):
+    // after a while, go.
+    if (stopped && !this.stopFor && !waitingByRule && this.#inWaitingCycle()) this.blockedTime += dt;
     else this.blockedTime = 0;
     if (this.blockedTime > 6) {
       this.patience = 2.5;
@@ -149,7 +204,7 @@ export class TrafficDriver {
     }
 
     // Safety net for gridlock the rules above can't untangle.
-    this.stuckTime = stopped ? this.stuckTime + dt : 0;
+    this.stuckTime = stopped && !waitingByRule ? this.stuckTime + dt : 0;
 
     // Fade in after spawning; fade out and leave at the end of a dead-end
     // route, or after being stuck for a long time.
@@ -157,15 +212,34 @@ export class TrafficDriver {
     if (this.stuckTime > 12) this.leaving = true;
     car.alpha = clamp(car.alpha + (this.leaving ? -dt / 0.8 : dt / 0.6), 0, 1);
     this.finished = this.leaving && car.alpha === 0;
+    if (this.finished) this.#releaseJunction(true);
+  }
+
+  /** Does following the chain of leaders lead back to this car? */
+  #inWaitingCycle() {
+    let car = this.leader?.car;
+    for (let hops = 0; car?.driver && hops < 5; hops++) {
+      if (car === this.car) return true;
+      car = car.driver.leader?.car;
+    }
+    return car === this.car;
   }
 
   // ---- route ----------------------------------------------------------------
 
   #rebuild() {
-    const { path, stepStarts } = this.planner.buildPath(this.steps, this.lane);
+    this.lanePlan = this.city ? this.city.lanePlan(this.steps, this.lane) : this.steps.map(() => this.lane);
+    const { path, stepStarts } = this.planner.buildPath(this.steps, this.lanePlan);
     this.path = path;
     this.stepStarts = stepStarts;
     this.deadEnd = this.planner.nextOptions(this.steps[this.steps.length - 1]).length === 0;
+  }
+
+  /** After crossing a junction the car is in the lane its connection led to. */
+  #syncLane() {
+    if (this.pendingLane !== null) return;
+    const planned = this.lanePlan[this.stepIndex];
+    if (planned !== undefined) this.lane = planned;
   }
 
   /** Drop the steps already driven and plan further ahead. */
@@ -173,11 +247,32 @@ export class TrafficDriver {
     const index = this.stepIndex;
     const offset = this.stepStarts[index];
     const kept = this.steps.slice(index);
+    this.lane = this.lanePlan[index] ?? this.lane;
     this.steps = this.planner.extend(kept, Math.max(this.options.routeLength, kept.length + extra), this.rng);
     this.#rebuild();
     const estimate = this.s - offset;
     const proj = this.path.project(this.car.position, estimate - m(6), estimate + m(6));
     this.s = proj ? proj.s : estimate;
+  }
+
+  /** In a lane that can't make the planned turn, close to the junction: take a turn it can make. */
+  #reroute() {
+    const k = this.stepIndex;
+    const step = this.steps[k];
+    const junction = this.city?.junctionAt(RoutePlanner.end(step));
+    const options = junction?.movementsFromLane(step, this.lane) ?? [];
+    if (!options.length) return false;
+    const mv = options[Math.floor(this.rng() * options.length)];
+    const out = junction.arms[mv.to].outStep;
+    const next = this.planner.allSteps().find((s) => s.road === out.road && s.dir === out.dir);
+    if (!next) return false;
+    const offset = this.stepStarts[k];
+    this.steps = this.planner.extend([step, next], this.options.routeLength, this.rng);
+    this.#rebuild();
+    const estimate = this.s - offset;
+    const proj = this.path.project(this.car.position, estimate - m(6), estimate + m(6));
+    this.s = proj ? proj.s : estimate;
+    return true;
   }
 
   // ---- perception -------------------------------------------------------------
@@ -197,7 +292,9 @@ export class TrafficDriver {
 
       let hit = this.#corridorHit(other, new Point(0, 0));
       let predicted = false;
-      if (!hit && Math.abs(other.speed) > m(1)) {
+      // In a city, junction reservations keep traffic apart; predicting where
+      // other cars will be is only needed for cars without a driver (the player).
+      if (!hit && Math.abs(other.speed) > m(1) && !(this.city && other.driver)) {
         hit = this.#corridorHit(other, other.velocity.scale(1.2));
         predicted = true;
       }
@@ -237,6 +334,24 @@ export class TrafficDriver {
     return best;
   }
 
+  // ---- speed --------------------------------------------------------------------
+
+  /** min(own preference, speed limit × compliance), slowing early for a lower limit ahead. */
+  #speedTarget() {
+    const o = this.options;
+    const k = this.stepIndex;
+    const step = this.steps[k];
+    let target = o.desiredSpeed;
+    if (step?.road.speedLimit) target = Math.min(target, step.road.speedLimit * o.speedCompliance);
+    const next = this.steps[k + 1];
+    if (next?.road.speedLimit) {
+      const nextLimit = Math.min(o.desiredSpeed, next.road.speedLimit * o.speedCompliance);
+      const distance = Math.max(0, (this.stepStarts[k + 1] ?? this.path.length) - this.s);
+      target = Math.min(target, Math.sqrt(nextLimit * nextLimit + 2 * o.comfortBrake * distance));
+    }
+    return target;
+  }
+
   /** Highest speed that still allows comfortable braking for every curve ahead. */
   #curveLimit() {
     const { path, s, options: o } = this;
@@ -250,6 +365,97 @@ export class TrafficDriver {
       limit = Math.min(limit, Math.sqrt(vCorner * vCorner + 2 * o.comfortBrake * distance));
     }
     return Math.max(limit, m(2));
+  }
+
+  /** Virtual obstacles: dead ends, junction stop lines, crossings, a lane we must leave. */
+  *#stops() {
+    const car = this.car;
+    if (this.deadEnd) yield { gap: this.path.length - this.s - car.length / 2 - m(1), kind: 'end' };
+    if (!this.city) return;
+    const junctionStop = this.#junctionStop();
+    if (junctionStop) yield junctionStop;
+    const laneEnd = this.#laneEndStop();
+    if (laneEnd) yield laneEnd;
+    const crossingStop = this.#crossingStop();
+    if (crossingStop) yield crossingStop;
+  }
+
+  /** Distance from the front bumper to a junction arm's stop line. */
+  #distanceToLine(junction, arm) {
+    const line = junction.node.add(arm.away.scale(arm.stopDistance));
+    const front = this.car.position.add(this.car.forward.scale(this.car.length / 2));
+    return line.subtract(front).dot(arm.away.scale(-1));
+  }
+
+  #junctionStop() {
+    const k = this.stepIndex;
+    const step = this.steps[k];
+    const next = this.steps[k + 1];
+    if (!step || !next) return null;
+    const junction = this.city.junctionAt(RoutePlanner.end(step));
+    if (!junction || !junction.isIntersection) return null;
+    const arm = junction.armOf(step);
+    if (!arm) return null;
+    const dist = this.#distanceToLine(junction, arm);
+    if (dist > m(60)) return null;
+
+    let movement = this.city.movement(step, this.lane, next);
+    if (!movement && dist < m(12) && this.pendingLane === null && this.#reroute()) {
+      movement = this.city.movement(this.steps[k], this.lane, this.steps[k + 1]);
+    }
+    // Still in the wrong lane: wait at the line while lane changing keeps trying.
+    if (!movement) return dist < m(12) ? { gap: dist - m(0.5), kind: 'lane' } : null;
+
+    const go = junction.request(this, movement, dist, Math.max(0, this.car.speed), this.city.time);
+    if (go && junction.occupants.has(this)) this.entered.add(junction);
+    return go ? null : { gap: dist - m(0.3), kind: 'junction' };
+  }
+
+  /**
+   * A lane that ends (lane drop, acceleration lane, a lane that can't reach
+   * the next road): don't drive off its end, wait there for a gap to merge.
+   */
+  #laneEndStop() {
+    const k = this.stepIndex;
+    const step = this.steps[k];
+    const next = this.steps[k + 1];
+    if (!step || !next || this.pendingLane !== null) return null;
+    const junction = this.city.junctionAt(RoutePlanner.end(step));
+    if (!junction || junction.isIntersection) return null;
+    const allowed = this.city.allowedLanes(step, next);
+    if (!allowed.length || allowed.includes(this.lane)) return null;
+    const toNode = (this.stepStarts[k + 1] ?? this.path.length) - this.s;
+    return { gap: toNode - this.car.length / 2 - m(6), kind: 'lane' };
+  }
+
+  /** Release a junction reservation once the car is clear of the box. */
+  #releaseJunction(force = false) {
+    for (const junction of this.entered) {
+      const clearance = Math.max(...junction.arms.map((a) => a.stopDistance)) + this.car.length;
+      // Only once the junction is behind us: a car waiting at its stop line is
+      // already this far from the centre.
+      const behind = junction.node.subtract(this.car.position).dot(this.car.forward) < 0;
+      if (force || (behind && junction.node.distanceTo(this.car.position) > clearance)) {
+        junction.release(this);
+        this.entered.delete(junction);
+      }
+    }
+  }
+
+  #crossingStop() {
+    const k = this.stepIndex;
+    for (const i of [k, k + 1]) {
+      const step = this.steps[i];
+      if (!step) continue;
+      const crossing = this.city.crossingOn(step.road);
+      if (!crossing || !crossing.occupied) continue;
+      const at = this.stepStarts[i] + crossing.distanceFromStart(step.dir);
+      const gap = at - this.s - this.car.length / 2 - crossing.depth / 2 - m(1.5);
+      if (gap < -m(1)) continue; // already on it: keep going
+      const stopping = (this.car.speed * this.car.speed) / (2 * this.options.maxBrake);
+      if (gap > stopping * 0.6) return { gap, kind: 'crossing' };
+    }
+    return null;
   }
 
   // ---- control ---------------------------------------------------------------
@@ -278,15 +484,33 @@ export class TrafficDriver {
     return clamp(steer / maxSteerAt(p, car.speed), -1, 1);
   }
 
-  /** Obstacle avoidance: change to a free adjacent lane when stuck behind a slow car. */
-  #updateLaneChange(dt, cars) {
+  // ---- lane changes (Week 23) ----------------------------------------------------
+
+  /**
+   * Lane changes, mandatory first: the next movement needs another lane (a
+   * turn, an exit, or this lane ending). Otherwise MOBIL: change when the
+   * acceleration gained in the other lane beats a threshold (with a bias
+   * towards the right-hand lane) and the new follower wouldn't brake hard.
+   */
+  #updateLanes(dt, cars) {
     const o = this.options;
-    const width = this.laneWidth;
 
     if (this.pendingLane !== null) {
-      this.shift = approach(this.shift, this.shiftTarget, o.laneChangeSpeed * dt);
+      // Someone moved alongside in the target lane: abort and steer back.
+      if (this.shiftTarget !== 0 && Math.abs(this.shift) < this.laneWidth * 0.6 && !this.#safe(this.pendingLane, cars, 0.35)) {
+        this.shiftTarget = 0;
+      }
+      // A car can only move sideways while it rolls forward.
+      const rate = o.laneChangeSpeed * clamp(Math.abs(this.car.speed) / m(4), 0, 1);
+      this.shift = approach(this.shift, this.shiftTarget, rate * dt);
+      if (this.shiftTarget === 0 && this.shift === 0) {
+        this.pendingLane = null;
+        this.laneTimer = 1;
+        return;
+      }
       if (this.shift === this.shiftTarget) {
         this.lane = this.pendingLane;
+        this.lanePlan[this.stepIndex] = this.pendingLane;
         this.pendingLane = null;
         this.shift = 0;
         this.shiftTarget = 0;
@@ -295,41 +519,112 @@ export class TrafficDriver {
       return;
     }
 
-    const leader = this.leader;
-    if (!leader || leader.predicted || leader.gap > m(20) || leader.speed > 0.4 * o.desiredSpeed) {
-      this.slowTime = 0;
-      return;
-    }
-    this.slowTime += dt;
-    if (this.slowTime < 1.2) return;
+    this.laneTimer -= dt;
+    if (this.laneTimer > 0) return;
+    this.laneTimer = 0.4;
 
-    const index = this.stepIndex;
-    const step = this.steps[index];
+    const k = this.stepIndex;
+    const step = this.steps[k];
+    const next = this.steps[k + 1];
     const count = RoutePlanner.laneCount(step);
-    const stepEnd = this.stepStarts[index + 1] ?? this.path.length;
-    if (count < 2 || stepEnd - this.s < m(25)) return;
+    this.lane = Math.min(this.lane, count - 1);
+    if (count < 2) return;
+    const toEnd = (this.stepStarts[k + 1] ?? this.path.length) - this.s;
 
-    const current = Math.min(this.lane, count - 1);
-    for (const target of [current + 1, current - 1]) {
-      if (target < 0 || target >= count) continue;
-      // Higher lane numbers are further left, i.e. negative lateral offset.
-      const offset = (target > current ? -1 : 1) * width;
-      if (!this.#laneClear(cars, offset)) continue;
-      this.lane = current;
-      this.pendingLane = target;
-      this.shiftTarget = offset;
-      this.slowTime = 0;
+    // Mandatory: the next movement isn't possible from this lane.
+    const allowedNext = this.city && next ? this.city.allowedLanes(step, next) : null;
+    if (allowedNext && allowedNext.length && !allowedNext.includes(this.lane)) {
+      const required = allowedNext.reduce((a, b) => (Math.abs(b - this.lane) < Math.abs(a - this.lane) ? b : a));
+      const target = this.lane + Math.sign(required - this.lane);
+      // The closer the end of the lane, the smaller the gap we accept.
+      const urgency = clamp(1 - toEnd / m(120), 0, 1);
+      if (this.#safe(target, cars, 1 - urgency * 0.6)) this.#startLaneChange(target, 'mandatory');
       return;
     }
+    if (toEnd < m(40)) return;
+
+    // Discretionary (MOBIL).
+    const current = this.#accelerationIn(this.lane, cars);
+    let best = null;
+    for (const target of [this.lane + 1, this.lane - 1]) {
+      if (target < 0 || target >= count) continue;
+      if (allowedNext && allowedNext.length && !allowedNext.includes(target) && toEnd < m(150)) continue;
+      const gain = this.#accelerationIn(target, cars) - current + (target < this.lane ? o.keepRightBias : 0);
+      if (gain > o.laneChangeThreshold && (!best || gain > best.gain) && this.#safe(target, cars, 1)) best = { target, gain };
+    }
+    if (best) this.#startLaneChange(best.target, best.target > this.lane ? 'overtake' : 'keep right');
   }
 
-  #laneClear(cars, offset) {
+  #startLaneChange(target, reason) {
+    this.pendingLane = target;
+    this.laneChangeReason = reason;
+    // Higher lane numbers are further left, i.e. negative lateral offset.
+    this.shiftTarget = (target > this.lane ? -1 : 1) * this.laneWidth;
+  }
+
+  /** IDM acceleration this car would have behind the leader in `lane`. */
+  #accelerationIn(lane, cars = []) {
+    const o = this.options;
+    const v = Math.max(0, this.car.speed);
+    const v0 = this.#speedTarget();
+    let gap = Infinity;
+    let dv = 0;
+    if (lane === this.lane && this.leader) {
+      gap = this.leader.gap;
+      dv = v - this.leader.speed;
+    } else {
+      const leader = this.laneIndex
+        ? this.laneIndex.neighbours(this.laneInfo().road, this.laneInfo().dir, lane, this.laneInfo().s, this.car).leader
+        : this.#leaderAtOffset(cars, (this.lane - lane) * this.laneWidth);
+      if (leader) {
+        gap = leader.gap;
+        dv = v - Math.max(0, leader.car.speed);
+      }
+    }
+    return idmAcceleration({ v, v0, gap, dv, a: o.maxAccel, b: o.comfortBrake, s0: o.minGap, T: o.timeHeadway });
+  }
+
+  /** Without a lane index: the nearest car ahead whose lateral offset from our path is `offset`. */
+  #leaderAtOffset(cars, offset) {
+    let best = null;
+    for (const other of cars) {
+      if (other === this.car) continue;
+      const proj = this.path.project(other.position, this.s, this.s + this.options.sensorRange);
+      if (!proj || proj.s - this.s <= this.car.length / 2) continue;
+      if (Math.abs(proj.lateral - offset) > this.laneWidth / 2) continue;
+      const gap = proj.s - this.s - (this.car.length + other.length) / 2;
+      if (!best || gap < best.gap) best = { car: other, gap };
+    }
+    return best;
+  }
+
+  /** Is there room in `lane` beside us? `strictness` < 1 accepts tighter gaps (mandatory changes). */
+  #safe(lane, cars, strictness) {
+    const o = this.options;
+    const v = Math.max(0, this.car.speed);
+    if (this.laneIndex) {
+      const info = this.laneInfo();
+      const { leader, follower } = this.laneIndex.neighbours(info.road, info.dir, lane, info.s, this.car);
+      if (leader && leader.gap < (m(2) + v * 0.3) * strictness) return false;
+      if (follower) {
+        if (follower.gap < m(2) * strictness) return false;
+        const fv = Math.max(0, follower.car.speed);
+        const brake = idmAcceleration({ v: fv, v0: Math.max(fv, m(5)), gap: follower.gap, dv: fv - v, a: o.maxAccel, b: o.comfortBrake, s0: o.minGap, T: o.timeHeadway });
+        if (brake < -o.safeBrake / strictness) return false;
+      }
+      return this.#laneClear(cars, (lane > this.lane ? -1 : 1) * this.laneWidth, strictness);
+    }
+    return this.#laneClear(cars, (lane > this.lane ? -1 : 1) * this.laneWidth, strictness);
+  }
+
+  /** Nobody beside us in the target lane (geometric check, also catches cars on other roads). */
+  #laneClear(cars, offset, strictness = 1) {
     const width = this.laneWidth;
     for (const other of cars) {
       if (other === this.car) continue;
       const proj = this.path.project(other.position, this.s - m(12), this.s + m(25));
       if (!proj || proj.distance > width * 2.5) continue;
-      const alongOk = proj.s > this.s - m(10) && proj.s < this.s + m(22);
+      const alongOk = proj.s > this.s - m(8) * strictness && proj.s < this.s + m(12) * strictness;
       if (alongOk && Math.abs(proj.lateral - offset) < width * 0.9) return false;
     }
     return true;

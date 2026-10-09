@@ -4,6 +4,7 @@ import { Point } from '../primitives/point.js';
 import { Polygon } from '../primitives/polygon.js';
 import { Segment } from '../primitives/segment.js';
 import { Road } from './road.js';
+import { ROAD_TYPES } from './roadTypes.js';
 
 export const ROAD_DEFAULTS = {
   laneWidth: 22,
@@ -122,7 +123,13 @@ export class RoadNetwork {
       )
       .map((other) => other.poly);
 
-    for (const boundary of road.boundaries()) {
+    // Highways and ramps get solid edge lines just inside the border.
+    const boundaries = road.boundaries();
+    if (ROAD_TYPES[road.type].edgeLines) {
+      const inset = road.width / 2 - 2.5;
+      boundaries.push({ offset: -inset, type: 'edge' }, { offset: inset, type: 'edge' });
+    }
+    for (const boundary of boundaries) {
       const line = seg.offset(boundary.offset);
       for (const end of ['p1', 'p2']) {
         const next = continuation[end];
@@ -181,8 +188,12 @@ export class RoadNetwork {
   draw(ctx, { debug = false } = {}) {
     const o = this.options;
 
-    for (const poly of this.surfaces()) {
+    for (const poly of this.fillets) {
       poly.draw(ctx, { fill: o.surfaceColor, stroke: o.surfaceColor, lineWidth: 1, join: 'round' });
+    }
+    for (const road of this.roads) {
+      const color = road.type === 'street' ? o.surfaceColor : ROAD_TYPES[road.type].surface;
+      road.poly.draw(ctx, { fill: color, stroke: color, lineWidth: 1, join: 'round' });
     }
 
     for (const road of this.roads) {
@@ -191,8 +202,11 @@ export class RoadNetwork {
         if (type === 'center') {
           segment.offset(-o.centerGap).draw(ctx, { width: o.markingWidth, color: o.centerColor });
           segment.offset(o.centerGap).draw(ctx, { width: o.markingWidth, color: o.centerColor });
+        } else if (type === 'edge') {
+          segment.draw(ctx, { width: o.markingWidth, color: o.laneColor });
         } else {
-          segment.draw(ctx, { width: o.markingWidth, color: o.laneColor, dash: o.laneDash });
+          const dash = road.type === 'street' ? o.laneDash : [20, 22];
+          segment.draw(ctx, { width: o.markingWidth, color: o.laneColor, dash });
         }
       }
     }
