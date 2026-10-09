@@ -2,13 +2,15 @@
 
 A 2D road network simulator built from scratch with plain HTML, CSS and JavaScript ES modules on a single `<canvas>`. There is no framework, no bundler and no runtime dependencies.
 
-The repository currently holds three phases:
+The repository currently holds four phases:
 
 - **Phase 1: simulator foundation.** The engine, a geometry library, an editable road graph, and procedural road generation with lanes, centre lines and direction arrows.
 - **Phase 2: cars.** A drivable car with a bicycle-model physics engine, SAT collision detection against road borders and other cars, and traffic vehicles that follow routes, keep their distance and get around obstacles.
 - **Phase 3: sensors.** A ray sensor, a spinning LiDAR, radar, GPS and an IMU behind one standard API. Each sensor can be given noise, latency, limited range, dropped measurements and failures, so a future autonomous driver can't rely on perfect information.
+- **Phase 4: first self-driving AI.** A neural network written from scratch, connected to the car's sensors and controls, and trained by a genetic algorithm on populations of up to 500 cars.
 
 **Milestone #1 reached:** a manually drivable traffic simulator.
+**Milestone #2 reached:** cars learn basic road following.
 
 ![Traffic with sensor debug view](docs/screenshot-traffic.png)
 
@@ -24,7 +26,7 @@ python -m http.server 8080
 
 | Page | URL |
 | --- | --- |
-| Simulator (press `3` to drive) | `http://localhost:8080/` |
+| Simulator (press `3` to drive, `4` to train AI) | `http://localhost:8080/` |
 | Geometry visual tests | `http://localhost:8080/tests/visual/` |
 
 ```bash
@@ -38,6 +40,7 @@ npm test                      # unit tests (Node ≥ 22, built-in node:test, no 
 | 1. Simulator foundation | 1–4 | ✅ |
 | 2. Cars | 5–8 | ✅ |
 | 3. Sensors | 9–12 | ✅ |
+| 4. First self-driving AI | 13–16 | ✅ |
 
 ## Phase 1: simulator foundation
 
@@ -267,6 +270,73 @@ Each sensor has a **datasheet** (`spec`): its 1σ noise per quantity, typical la
 - **Status badges** are ground truth for debugging: `ok`, `failed`, `stuck`, `stale`, `off`. A consumer of `read()` only sees what a real car would: readings, their timestamps and their age.
 - **Reproducible noise.** All noise comes from seeded RNGs, so the tests replay exactly.
 
+## Phase 4: first self-driving AI
+
+| Week | Goal | Status |
+| --- | --- | --- |
+| 13 | **Neural network from scratch:** neurons, layers, weights, biases, activation functions, `feedForward()`, serialisation; no TensorFlow | ✅ |
+| 14 | **Brain ↔ car:** sensor readings → network inputs, network outputs → vehicle controls | ✅ |
+| 15 | **Population training:** 100–500 cars at once, each with a slightly different brain; crashed cars are removed and the best driver is identified | ✅ |
+| 16 | **Genetic algorithm:** fitness, elitism, mutation, crossover, tournament selection, regeneration; champion saved to localStorage | ✅ |
+
+![Training a population](docs/screenshot-training.png)
+
+Press `4`, then **Start**. The camera follows the leading car, and the ×N selector fast-forwards (up to 25 simulation steps per frame). A trained champion can then drive your car: press `K` (autopilot).
+
+### Week 13: neural network (`src/ai/network.js`, `activations.js`)
+
+```
+Sensors → Inputs → Hidden layer → Outputs → Throttle / Brake / Steering
+```
+
+- **`Layer`.** A set of neurons, each connected to every value of the previous layer. Neuron *j* computes `activation(Σ inputs[i]·weights[j][i] + biases[j])`.
+- **`NeuralNetwork([8, 8, 3])`.** A list of layers, built from layer sizes with inputs first. Hidden layers and the output layer use `tanh` by default. `sigmoid`, `relu`, `leakyRelu`, `step` and `linear` are available by name, so networks serialise to plain JSON.
+- **Genome.** `feedForward()`, `clone()`, `toJSON()` / `fromJSON()`, and `toGenome()` / `setGenome()`. The genome is every weight and bias as one flat array, which is what the genetic algorithm works on.
+- **No gradient descent.** Weights are found by evolution, so the network only needs to run forward.
+
+### Week 14: connecting the brain to the car (`brain.js`)
+
+| | Values |
+| --- | --- |
+| Inputs (8) | 7 rays over 150°, 20 m: `0` = nothing in range … `1` = obstacle touching; plus own speed (wheel odometry) scaled to ±1 |
+| Hidden (8) | `tanh` |
+| Outputs (3) | throttle = max(0, out₀), brake = max(0, out₁), steer = out₂ (all `tanh`); reverse disabled |
+
+- **Standard readings only.** The brain consumes a **standard Phase 3 sensor reading**, so it never sees the world directly.
+- **The same brain everywhere.** It drives a training car with a perfect sensor, or your car through its own sensor suite, including whatever noise, latency or failure you set in the sensor panel.
+- **Matching sensor layout.** A brain carries the ray layout it was trained with, and turning on the autopilot sets your car's ray sensor to match.
+- **Week 14's goal.** With no champion yet, `K` gives your car a random brain: *one terrible autonomous car that can technically drive itself*.
+
+### Week 15: population training (`trainer.js`)
+
+- **Start position.** Every generation spawns the whole population at the same place: by default the right-hand lane at the start of the longest run of road without sharp turns, or optionally your car's position.
+- **Ghost cars.** Cars don't collide with each other. Each has its own brain and its own ray sensor, and can crash into road borders and traffic.
+- **Removal.** A car is removed when it **crashes**, or when it **stalls** (no new road for 4 s). A generation ends when every car is out or its time limit (40 s) is up.
+- **Fitness = metres of distinct road driven** (`coverage.js`):
+  - Every road skeleton is cut into 2 m bins, and a car scores each bin it reaches for the first time.
+  - Circling or wiggling earns nothing, while following the road earns ~1 m per metre.
+  - It works on any network you build, with no hand-made track or checkpoints.
+- **The leader.** The best live car is drawn in green with its rays; the rest are faint. The panel draws the leader's network live: inputs on the left, blue/orange connections for positive/negative weights, and each neuron filled with its activation.
+
+### Week 16: genetic algorithm (`genetics.js`)
+
+| Step | Implementation (defaults; GA settings can change while training) |
+| --- | --- |
+| Fitness | metres of distinct road (above) |
+| Elitism | the best 2 genomes are copied unchanged. The simulation is deterministic, so they replay the same score, and the best fitness never goes down |
+| Tournament selection | pick 4 at random, keep the fittest |
+| Crossover | uniform: each gene from either parent (70 % of children; the rest copy one parent) |
+| Mutation | each gene with probability 0.1 gets Gaussian noise (σ 0.3) |
+| Regeneration | elites + children fill the next population |
+
+- **The champion.** The best brain seen so far is the **champion**. It is saved to `localStorage` automatically whenever it improves, so it survives reloads. A new run continues from it (the champion plus mutated copies) unless you untick that option.
+- **Training panel.** It shows live stats (generation, alive / crashed / stalled, leader and champion fitness) and a best-and-average fitness chart with hover tooltips.
+- **Milestone #2.** The unit test trains 60 cars for 10 generations on the demo map. The champion must drive more than 250 m (the avenue plus the bend to its far end is ~285 m), and the population average must at least triple. In practice the best car covers the whole run by generation 4 or 5.
+
+**What it can't do yet:**
+- The brain has no route or destination input, so at a junction it goes wherever its reflexes take it.
+- It follows the road, but doesn't keep to a lane.
+
 ## Controls
 
 | Input | Action |
@@ -275,7 +345,7 @@ Each sensor has a **datasheet** (`spec`): its 1σ noise per quantity, typical la
 | Mouse wheel | Zoom at cursor |
 | Middle drag, or `Space` + drag | Pan |
 | `F` / `0` | Fit network / reset view |
-| `1` / `2` / `3` | Graph mode / Roads mode / Drive mode |
+| `1` / `2` / `3` / `4` | Graph / Roads / Drive / Train mode |
 
 **Graph mode**
 
@@ -305,6 +375,7 @@ Each sensor has a **datasheet** (`spec`): its 1σ noise per quantity, typical la
 | `←` `→` / `A` `D` | Steer |
 | `Space` | Handbrake |
 | `R` | Reset the car |
+| `K` | Autopilot: the champion (or a random brain) drives |
 | Mouse wheel | Zoom (the camera follows the car) |
 
 **Simulation** (any mode)
@@ -342,14 +413,15 @@ src/
   sensors/              sensor.js (common API) · raycast.js · raySensor.js · lidar.js · radar.js · gps.js · imu.js
                         imperfections.js · noise.js · sensorSuite.js
   sim/simulation.js     cars, substepping, collisions, traffic, sensors, debug drawing
-  ui/                   controls.js (toolbar & road panel) · hud.js (car dashboard) · sensorPanel.js
+  ai/                   network.js · activations.js · brain.js · genetics.js · trainer.js · coverage.js · championStore.js
+  ui/                   controls.js · hud.js · sensorPanel.js · trainingPanel.js · networkView.js · fitnessChart.js
   data/demo.js          sample network
 tests/
-  unit/                 node:test suites: geometry, graph, roads, car physics, collisions, traffic, sensors
+  unit/                 node:test suites: geometry, graph, roads, car physics, collisions, traffic, sensors, AI
   visual/               interactive geometry test gallery
 ```
 
-Every module under `math/`, `primitives/`, `graph/graph.js`, `road/`, `car/`, `collision/`, `traffic/`, `sensors/` and `sim/` is DOM-free. The unit tests run them directly in Node, and later phases can reuse them in workers.
+Every module under `math/`, `primitives/`, `graph/graph.js`, `road/`, `car/`, `collision/`, `traffic/`, `sensors/`, `ai/` and `sim/` is DOM-free. The unit tests run them directly in Node, and later phases can reuse them in workers.
 
 ## Design notes
 
@@ -359,6 +431,7 @@ Every module under `math/`, `primitives/`, `graph/graph.js`, `road/`, `car/`, `c
 - **One input interface for every driver.** The keyboard, traffic drivers and (later) AI all just set `car.input`. Physics doesn't know who is driving.
 - **Decide once per frame, integrate in substeps.** Drivers choose their inputs once per frame. Physics and collision resolution run in as many substeps as the fastest car needs.
 - **Deterministic traffic.** Routes, spawns and vehicle variety come from a seeded RNG, so the regression tests replay exactly.
+- **Evolution needs determinism.** With a fixed seed and no sensor noise, a brain gets exactly the same score every time it drives. That is what makes elitism meaningful.
 - **Ground truth and perception stay separate.** Sensors read the simulation's true state, but everything downstream gets only delivered sensor readings. The next phases can't cheat by peeking at the world.
 
 ## Licence

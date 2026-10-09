@@ -167,15 +167,18 @@ describe('Demo traffic', () => {
     net.update();
     const sim = new Simulation(net, { trafficCount: 14, seed: 7 });
     sim.syncRoads();
-    const start = new Map(sim.traffic.cars.map((c) => [c, c.position]));
+    const driven = new Map(sim.traffic.cars.map((c) => [c, 0]));
     let pairs = 0;
     for (let i = 0; i < 60 * 60; i++) {
+      const before = new Map(sim.traffic.cars.map((c) => [c, c.position]));
       sim.update(1 / 60);
       pairs += sim.carPairs.length;
+      for (const [c, p] of before) if (driven.has(c)) driven.set(c, driven.get(c) + p.distanceTo(c.position));
     }
     assert.equal(pairs, 0);
     assert.equal(sim.traffic.cars.length, 14);
-    const survivors = sim.traffic.cars.filter((c) => start.has(c));
-    assert.ok(survivors.every((c) => c.position.distanceTo(start.get(c)) > m(20)));
+    // Every original car still on the map has driven a fair distance.
+    const survivors = sim.traffic.cars.filter((c) => driven.has(c));
+    assert.ok(survivors.every((c) => driven.get(c) > m(50)));
   });
 });

@@ -13,6 +13,8 @@ import { Simulation } from './sim/simulation.js';
 import { Controls } from './ui/controls.js';
 import { Hud } from './ui/hud.js';
 import { SensorPanel } from './ui/sensorPanel.js';
+import { TrainingPanel } from './ui/trainingPanel.js';
+import { Brain } from './ai/brain.js';
 
 const PAN_SPEED = 700; // screen pixels per second
 const ZOOM_SENSITIVITY = 0.0015;
@@ -33,6 +35,7 @@ const overlay = new DebugOverlay(document.getElementById('debug'));
 const hud = new Hud(document.getElementById('car-panel'));
 const sensorPanel = new SensorPanel(document.getElementById('sensor-panel'), sim.sensors);
 const PRESET_CYCLE = ['perfect', 'realistic', 'degraded'];
+const trainingPanel = new TrainingPanel(document.getElementById('training-panel'), sim, { onAutopilot: () => toggleAutopilot() });
 
 const view = { showGrid: true, showGraph: true, debugGeometry: false, collisionDebug: false, trafficDebug: false };
 let pixelRatio = 1;
@@ -72,6 +75,7 @@ const controls = new Controls({
     model: () => sim.toggleModel(),
     weather: () => sim.cycleWeather(),
     resetCar: () => sim.resetPlayer(),
+    autopilot: () => toggleAutopilot(),
   },
 });
 
@@ -93,6 +97,22 @@ function resize() {
 }
 
 const driving = () => editor.mode === EditorMode.DRIVE;
+const training = () => editor.mode === EditorMode.TRAIN;
+
+/**
+ * Autopilot: the champion (or, with none trained yet, a random and
+ * therefore terrible brain) drives the player's car from its ray sensor.
+ */
+function toggleAutopilot() {
+  if (sim.autopilot) {
+    sim.disableAutopilot();
+    return;
+  }
+  const champion = trainingPanel.champion;
+  sim.enableAutopilot(champion ? Brain.fromJSON(champion.brain) : new Brain());
+  sensorPanel.syncConfig();
+  editor.setMode(EditorMode.DRIVE);
+}
 
 // ---- update ---------------------------------------------------------------
 
@@ -101,6 +121,8 @@ function handleShortcuts() {
   if (k('Digit1')) editor.setMode(EditorMode.GRAPH);
   if (k('Digit2')) editor.setMode(EditorMode.ROAD);
   if (k('Digit3')) editor.setMode(EditorMode.DRIVE);
+  if (k('Digit4')) editor.setMode(EditorMode.TRAIN);
+  if (k('KeyK')) toggleAutopilot();
   if (k('KeyG')) {
     if (input.shift) view.showGrid = !view.showGrid;
     else editor.snapToGrid = !editor.snapToGrid;
@@ -133,10 +155,10 @@ function handleShortcuts() {
 function updateCamera(dt, rawDelta) {
   const spaceHeld = !driving() && input.isDown('Space');
 
-  if (driving()) {
-    // Follow the car, looking a little ahead of it. Uses real time so the
-    // camera still moves while the simulation is paused.
-    const car = sim.player;
+  if (driving() || training()) {
+    // Follow the car (or the training leader), looking a little ahead of it.
+    // Uses real time so the camera still moves while the simulation is paused.
+    const car = (training() && sim.trainer?.leader?.car) || sim.player;
     const target = car.position.add(car.velocity.scale(0.35));
     const t = 1 - Math.exp(-FOLLOW_STIFFNESS * rawDelta);
     camera.center = camera.center.add(target.subtract(camera.center).scale(t));
@@ -158,17 +180,18 @@ function updateCamera(dt, rawDelta) {
   // Mouse drag panning: middle button, or Space + left button.
   panning =
     !driving() &&
+    !training() &&
     (input.isMouseDown(MouseButton.MIDDLE) || (spaceHeld && input.isMouseDown(MouseButton.LEFT)));
   if (panning) camera.panScreen(input.mouse.delta.x, input.mouse.delta.y);
 
   if (input.mouse.wheel) {
-    const anchor = driving()
+    const anchor = driving() || training()
       ? { x: camera.viewport.width / 2, y: camera.viewport.height / 2 }
       : input.mouse.position;
     camera.zoomAt(Math.exp(-input.mouse.wheel * ZOOM_SENSITIVITY), anchor);
   }
 
-  canvas.style.cursor = driving()
+  canvas.style.cursor = driving() || training()
     ? 'default'
     : panning
       ? 'grabbing'
@@ -199,12 +222,24 @@ function update(dt, rawDelta) {
   network.update();
   // Re-plan traffic once a graph edit is finished (not on every drag frame).
   if (sim.needsSync() && !editor.dragging) sim.syncRoads();
-  sim.update(dt, driving() ? keyboard.read() : NO_INPUT);
+  if (training() && sim.trainer) {
+    // Fast-forward: several simulation steps per rendered frame.
+    for (let i = 0; i < trainingPanel.speed; i++) {
+      sim.update(dt, NO_INPUT);
+      sim.updateTraining(dt);
+    }
+  } else {
+    const input = driving() ? (sim.autopilot ? sim.autopilotInput() : keyboard.read()) : NO_INPUT;
+    sim.update(dt, input);
+  }
   autosave(rawDelta);
   controls.sync();
   hud.update(sim, rawDelta, driving());
   sensorPanel.update(rawDelta);
+  trainingPanel.show(training());
+  trainingPanel.update(rawDelta);
   document.body.classList.toggle('driving', driving());
+  document.body.classList.toggle('training', training());
 
   const mouseWorld = editor.mouse;
   const stats = network.stats();
@@ -220,6 +255,7 @@ function update(dt, rawDelta) {
   overlay.set('Car', `${car.x.toFixed(0)}, ${car.y.toFixed(0)}  ${toKmh(car.speed).toFixed(0)} km/h`);
   overlay.set('Traffic', `${sim.traffic.cars.length} vehicles`);
   overlay.set('Sensors', `${sim.sensors.preset} · ${sim.sensors.sensors.filter((s) => s.status === 'ok').length}/${sim.sensors.sensors.length} ok`);
+  if (sim.trainer) overlay.set('Training', `gen ${sim.trainer.generation} · ${sim.trainer.alive.length}/${sim.trainer.agents.length} alive · champion ${(sim.trainer.champion?.fitness ?? 0).toFixed(0)} m`);
   overlay.set('Sim', `${sim.stepMs.toFixed(2)} ms, ${sim.substeps} substep${sim.substeps > 1 ? 's' : ''}${sim.paused ? ' (paused)' : ''}`);
   overlay.update(rawDelta);
 
@@ -240,6 +276,7 @@ function render() {
     collisionDebug: view.collisionDebug,
     trafficDebug: view.trafficDebug,
     showSensors: sensorPanel.visible,
+    training: training(),
     pixel: 1 / camera.zoom,
   });
   editor.draw(ctx, { showGraph: view.showGraph });

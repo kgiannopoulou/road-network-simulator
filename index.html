@@ -17,6 +17,7 @@
         <button data-mode="graph" title="Build nodes and edges (1)">Graph <kbd>1</kbd></button>
         <button data-mode="road" title="Configure lanes and direction (2)">Roads <kbd>2</kbd></button>
         <button data-mode="drive" title="Drive the car with the keyboard (3)">Drive <kbd>3</kbd></button>
+        <button data-mode="train" title="Train self-driving cars with a genetic algorithm (4)">Train <kbd>4</kbd></button>
       </div>
 
       <div class="group" aria-label="Simulation">
@@ -88,9 +89,11 @@
         <dt>Surface</dt><dd data-hud="surface"></dd>
         <dt>Physics</dt><dd data-hud="model"></dd>
         <dt>Collisions</dt><dd data-hud="hits"></dd>
+        <dt>Driver</dt><dd data-hud="driver"></dd>
       </dl>
       <div class="row">
         <button data-action="resetCar" title="Put the car back at the start (R)">Reset car <kbd>R</kbd></button>
+        <button data-action="autopilot" title="Let the champion brain drive (K)">Autopilot <kbd>K</kbd></button>
       </div>
     </aside>
 
@@ -135,6 +138,53 @@
       <p class="hint">Noise, latency and drop-outs are multiples of each sensor's datasheet values. Pick a failure per sensor above.</p>
     </aside>
 
+    <aside id="training-panel" class="panel training-panel" hidden>
+      <h2>Training <span class="sub">neural network + genetic algorithm</span></h2>
+      <div class="train-stats" data-train-stats></div>
+      <div class="row">
+        <button data-train-action="start">Start</button>
+        <button data-train-action="next" title="End this generation now">Next gen</button>
+        <button data-train-action="stop">Stop</button>
+        <span></span>
+        <select data-train="speed" title="Simulation steps per frame">
+          <option value="1">×1</option>
+          <option value="2">×2</option>
+          <option value="5">×5</option>
+          <option value="10">×10</option>
+          <option value="25">×25</option>
+        </select>
+      </div>
+
+      <h3>Leader's brain</h3>
+      <canvas id="network-view" width="300" height="170" aria-label="Neural network of the leading car"></canvas>
+
+      <h3>Fitness <span class="sub">metres of distinct road</span></h3>
+      <div id="fitness-legend" class="legend"></div>
+      <canvas id="fitness-chart" width="300" height="110" aria-label="Best and average fitness per generation"></canvas>
+
+      <h3>Champion</h3>
+      <p class="champion" data-champion></p>
+      <div class="row">
+        <button data-train-action="autopilot" title="Drive your car with the champion (K)">Drive it <kbd>K</kbd></button>
+        <button data-train-action="forget" class="danger" title="Delete the saved champion">Forget</button>
+      </div>
+
+      <h3>Population <span class="sub">applies on (re)start</span></h3>
+      <div class="cfg"><span>Cars</span><input type="range" min="20" max="500" step="10" value="150" data-train="populationSize" /><output data-out="train-populationSize"></output></div>
+      <div class="cfg"><span>Hidden</span><input type="range" min="2" max="16" step="1" value="8" data-train="hidden" /><output data-out="train-hidden"></output></div>
+      <div class="cfg"><span>Time (s)</span><input type="range" min="10" max="120" step="5" value="40" data-train="generationTime" /><output data-out="train-generationTime"></output></div>
+      <label class="row"><input type="checkbox" data-train="sensorNoise" /> Train with realistic sensor noise</label>
+      <label class="row"><input type="checkbox" data-train="fromCar" /> Start from my car's position</label>
+      <label class="row"><input type="checkbox" data-train="continueChampion" checked /> Continue from the champion</label>
+
+      <h3>Genetic algorithm <span class="sub">live</span></h3>
+      <div class="cfg"><span>Mutation</span><input type="range" min="0" max="0.5" step="0.01" value="0.1" data-train="mutationRate" /><output data-out="train-mutationRate"></output></div>
+      <div class="cfg"><span>Amount</span><input type="range" min="0" max="1" step="0.05" value="0.3" data-train="mutationAmount" /><output data-out="train-mutationAmount"></output></div>
+      <div class="cfg"><span>Crossover</span><input type="range" min="0" max="1" step="0.05" value="0.7" data-train="crossoverRate" /><output data-out="train-crossoverRate"></output></div>
+      <div class="cfg"><span>Elitism</span><input type="range" min="0" max="20" step="1" value="2" data-train="elitism" /><output data-out="train-elitism"></output></div>
+      <div class="cfg"><span>Tournament</span><input type="range" min="2" max="10" step="1" value="4" data-train="tournamentSize" /><output data-out="train-tournamentSize"></output></div>
+    </aside>
+
     <aside id="help" class="panel help" hidden>
       <h2>Controls</h2>
       <h3>Camera</h3>
@@ -169,6 +219,11 @@
         <li><kbd>M</kbd> physics model · <kbd>Y</kbd> dry / wet / icy road</li>
         <li><kbd>C</kbd> collision debug · <kbd>X</kbd> traffic routes</li>
         <li><kbd>N</kbd> ghost (no collisions) · <kbd>P</kbd> pause</li>
+      </ul>
+      <h3>Train mode <kbd>4</kbd></h3>
+      <ul>
+        <li>Start a run in the training panel; the camera follows the leader</li>
+        <li><kbd>K</kbd> (drive mode) autopilot: the champion drives your car</li>
       </ul>
       <h3>Sensors</h3>
       <ul>

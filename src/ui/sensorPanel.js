@@ -81,6 +81,14 @@ export class SensorPanel {
       update();
     };
 
+    this.syncConfig = () => {
+      input('rayCount').value = rays.rayCount;
+      input('spread').value = Math.round((rays.spread * 180) / Math.PI);
+      input('rayRange').value = rays.range;
+      out('rayCount', String(rays.rayCount));
+      out('spread', `${input('spread').value}°`);
+      out('rayRange', `${rays.range} m`);
+    };
     bindRange('rayCount', (v) => (rays.rayCount = v), (v) => String(v));
     bindRange('spread', (v) => (rays.spread = degToRad(v)), (v) => `${v}°`);
     bindRange('rayRange', (v) => (rays.range = v), (v) => `${v} m`);

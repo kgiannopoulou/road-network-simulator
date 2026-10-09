@@ -1,3 +1,4 @@
+import { Trainer } from '../ai/trainer.js';
 import { Car } from '../car/car.js';
 import { NO_INPUT, PhysicsModel, SURFACES } from '../car/physics.js';
 import { SkidMarks } from '../car/skidMarks.js';
@@ -31,6 +32,8 @@ export class Simulation {
     this.player = new Car({ kind: 'player', color: '#ffd54a' });
     this.skids = new SkidMarks();
     this.sensors = new SensorSuite(this.player, this.world);
+    this.trainer = null; // population training (Phase 4)
+    this.autopilot = null; // a Brain driving the player's car
 
     this.model = PhysicsModel.REALISTIC;
     this.weather = 'dry';
@@ -74,20 +77,59 @@ export class Simulation {
     this.traffic.setRoads(roads, [this.player]);
     this.builtVersion = this.network.builtVersion;
     if (first) this.resetPlayer();
+    // The road network changed under a training run: restart it on the new
+    // roads, keeping its settings and champion.
+    if (this.trainer) {
+      const { spawn, ...options } = this.trainer.options;
+      this.startTraining({ ...options, champion: this.trainer.champion });
+    }
   }
 
-  /** Put the player at the start of the longest road, in its right-hand lane. */
+  // ---- AI (Phase 4) ---------------------------------------------------------
+
+  startTraining(options = {}) {
+    if (this.network.roads.length === 0) return null;
+    this.trainer = new Trainer(this.network.roads, this.world, options);
+    this.trainer.start();
+    return this.trainer;
+  }
+
+  stopTraining() {
+    this.trainer = null;
+  }
+
+  /** Advance training by dt; agents can crash into traffic. */
+  updateTraining(dt) {
+    if (!this.trainer || this.paused || dt <= 0) return;
+    this.trainer.update(dt, { obstacles: this.traffic.cars, surface: this.roadSurface, model: this.model });
+  }
+
+  /** Let a brain drive the player's car. Its ray sensor is set to the layout the brain was trained with. */
+  enableAutopilot(brain) {
+    this.autopilot = brain;
+    const rays = this.sensors.get('rays');
+    rays.rayCount = brain.sensor.rayCount;
+    rays.spread = brain.sensor.spread;
+    rays.range = brain.sensor.range;
+  }
+
+  disableAutopilot() {
+    this.autopilot = null;
+  }
+
+  /** Controls chosen by the autopilot from the latest delivered ray reading. */
+  autopilotInput() {
+    return this.autopilot.drive(this.sensors.read('rays'), this.player);
+  }
+
+  /**
+   * Put the player in the right-hand lane at the start of the longest run of
+   * road without sharp turns (the same place training starts from).
+   */
   resetPlayer() {
-    const planner = this.traffic.planner;
-    const steps = planner ? planner.allSteps().filter((s) => s.dir > 0) : [];
-    if (steps.length === 0) {
-      this.player.teleport(0, 0, 0);
-      return;
-    }
-    const step = steps.reduce((a, b) => (b.road.segment.length() > a.road.segment.length() ? b : a));
-    const { a, b } = RoutePlanner.laneLine(step, 0);
-    const p = Point.lerp(a, b, 0.2);
-    this.player.teleport(p.x, p.y, b.subtract(a).angle());
+    const spawn = Trainer.chooseSpawn(this.network.roads);
+    if (!spawn) this.player.teleport(0, 0, 0);
+    else this.player.teleport(spawn.x, spawn.y, spawn.angle);
     this.player.collisionCount = 0;
     this.skids.clear();
     this.sensors.reset();
@@ -180,15 +222,20 @@ export class Simulation {
 
   // ---- drawing --------------------------------------------------------------
 
-  draw(ctx, { collisionDebug = false, trafficDebug = false, showSensors = false, pixel = 1 } = {}) {
+  draw(ctx, { collisionDebug = false, trafficDebug = false, showSensors = false, training = false, pixel = 1 } = {}) {
     this.skids.draw(ctx);
+    if (training && this.trainer) {
+      this.trainer.drawSpawn(ctx, pixel);
+      this.trainer.draw(ctx, pixel);
+    }
     if (trafficDebug) this.#drawTrafficDebug(ctx, pixel);
     for (const car of this.cars) {
+      if (training && car === this.player) continue; // parked out of the way while training
       const hitRecently = this.time - (car.lastContactTime ?? -Infinity) < 0.25;
       const highlight = collisionDebug ? (hitRecently ? '#ff3b30' : 'rgba(80, 255, 140, 0.9)') : null;
       car.draw(ctx, { highlight });
     }
-    if (showSensors) this.sensors.draw(ctx, pixel);
+    if (showSensors && !training) this.sensors.draw(ctx, pixel);
     if (this.ghost) {
       this.player.polygon().draw(ctx, { fill: 'rgba(255,255,255,0.15)', stroke: '#ffffff', lineWidth: pixel });
     }

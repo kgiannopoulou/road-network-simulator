@@ -46,6 +46,7 @@ export class Hud {
     set('surface', `${car.surface.name} (μ ${car.surface.grip})`);
     set('model', sim.model === PhysicsModel.REALISTIC ? 'Bicycle model' : 'Basic');
     set('hits', String(car.collisionCount));
+    set('driver', sim.autopilot ? 'Autopilot' : 'You');
 
     const lock = car.params.maxSteer;
     this.fields.steerbar.style.setProperty('--steer', (s.steer / lock).toFixed(3));
