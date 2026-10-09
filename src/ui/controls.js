@@ -128,6 +128,9 @@ export class Controls {
 
   #statusText() {
     const e = this.editor;
+    if (e.mode === EditorMode.DRIVE) {
+      return '<b>Drive</b> · <kbd>↑</kbd><kbd>W</kbd> throttle · <kbd>↓</kbd><kbd>S</kbd> brake / reverse · <kbd>←</kbd><kbd>→</kbd> steer · <kbd>Space</kbd> handbrake · <kbd>R</kbd> reset car · <kbd>1</kbd> back to editing';
+    }
     if (e.mode === EditorMode.ROAD) {
       return e.selectedSegment
         ? '<b>Roads</b> · <kbd>+</kbd>/<kbd>−</kbd> lanes · <kbd>O</kbd> one-way · <kbd>R</kbd> reverse · right click to deselect'

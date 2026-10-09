@@ -16,6 +16,17 @@
       <div class="group" aria-label="Editor mode">
         <button data-mode="graph" title="Build nodes and edges (1)">Graph <kbd>1</kbd></button>
         <button data-mode="road" title="Configure lanes and direction (2)">Roads <kbd>2</kbd></button>
+        <button data-mode="drive" title="Drive the car with the keyboard (3)">Drive <kbd>3</kbd></button>
+      </div>
+
+      <div class="group" aria-label="Simulation">
+        <button data-toggle="traffic" title="Traffic on/off (T) · [ and ] change the number of vehicles">Traffic <span class="value" data-label="traffic">0</span> <kbd>T</kbd></button>
+        <button data-action="model" title="Physics model: basic (week 5) or bicycle model (week 6) (M)">Physics: <span class="value" data-label="model">Realistic</span> <kbd>M</kbd></button>
+        <button data-action="weather" title="Road surface grip: dry / wet / icy (Y)">Road: <span class="value" data-label="weather">Dry</span> <kbd>Y</kbd></button>
+        <button data-toggle="collisionDebug" title="Collision debug view (C)">Collisions <kbd>C</kbd></button>
+        <button data-toggle="trafficDebug" title="Traffic routes, steering targets and leaders (X)">Sensors <kbd>X</kbd></button>
+        <button data-toggle="ghost" title="Player car ignores collisions (N)">Ghost <kbd>N</kbd></button>
+        <button data-toggle="paused" title="Pause the simulation (P)">Pause <kbd>P</kbd></button>
       </div>
 
       <div class="group" aria-label="View">
@@ -59,6 +70,26 @@
       <p class="hint"><span class="dot start"></span> start &nbsp; <span class="dot end"></span> end — forward lanes run start → end on the right.</p>
     </aside>
 
+    <aside id="car-panel" class="panel car-panel" hidden>
+      <div class="speedo">
+        <span class="speed" data-hud="speed">0</span>
+        <span class="unit">km/h</span>
+        <span class="gear" data-hud="gear">N</span>
+      </div>
+      <div class="steer-bar" data-hud="steerbar" title="Front wheel angle"><span></span></div>
+      <dl>
+        <dt>Steering</dt><dd data-hud="steer"></dd>
+        <dt>Turn radius</dt><dd data-hud="radius"></dd>
+        <dt>Lateral</dt><dd data-hud="lateral"></dd>
+        <dt>Surface</dt><dd data-hud="surface"></dd>
+        <dt>Physics</dt><dd data-hud="model"></dd>
+        <dt>Collisions</dt><dd data-hud="hits"></dd>
+      </dl>
+      <div class="row">
+        <button data-action="resetCar" title="Put the car back at the start (R)">Reset car <kbd>R</kbd></button>
+      </div>
+    </aside>
+
     <aside id="help" class="panel help" hidden>
       <h2>Controls</h2>
       <h3>Camera</h3>
@@ -80,6 +111,19 @@
       <ul>
         <li>Click a road to select it</li>
         <li><kbd>+</kbd>/<kbd>−</kbd> lanes · <kbd>O</kbd> one-way · <kbd>R</kbd> reverse</li>
+      </ul>
+      <h3>Drive mode <kbd>3</kbd></h3>
+      <ul>
+        <li><kbd>↑</kbd>/<kbd>W</kbd> throttle · <kbd>↓</kbd>/<kbd>S</kbd> brake, then reverse</li>
+        <li><kbd>←</kbd><kbd>→</kbd>/<kbd>A</kbd><kbd>D</kbd> steer · <kbd>Space</kbd> handbrake</li>
+        <li><kbd>R</kbd> reset car · mouse wheel zoom</li>
+      </ul>
+      <h3>Simulation</h3>
+      <ul>
+        <li><kbd>T</kbd> traffic · <kbd>[</kbd>/<kbd>]</kbd> fewer / more vehicles</li>
+        <li><kbd>M</kbd> physics model · <kbd>Y</kbd> dry / wet / icy road</li>
+        <li><kbd>C</kbd> collision debug · <kbd>X</kbd> traffic sensors</li>
+        <li><kbd>N</kbd> ghost (no collisions) · <kbd>P</kbd> pause</li>
       </ul>
       <h3>Debug</h3>
       <ul>

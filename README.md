@@ -2,9 +2,14 @@
 
 A 2D road network simulator built from scratch with plain HTML, CSS and JavaScript ES modules on a single `<canvas>`. There is no framework, no bundler and no runtime dependencies.
 
-This repository holds **Phase 1: the simulator foundation**. It covers the engine, a geometry library, an editable road graph, and procedural road generation with lanes, centre lines and direction arrows.
+The repository currently holds two phases:
 
-![Road network editor](docs/screenshot-roads.png)
+- **Phase 1: simulator foundation.** The engine, a geometry library, an editable road graph, and procedural road generation with lanes, centre lines and direction arrows.
+- **Phase 2: cars.** A drivable car with a bicycle-model physics engine, SAT collision detection against road borders and other cars, and traffic vehicles that follow routes, keep their distance and get around obstacles.
+
+**Milestone #1 reached:** a manually drivable traffic simulator.
+
+![Traffic with sensor debug view](docs/screenshot-traffic.png)
 
 ## Quick start
 
@@ -18,14 +23,23 @@ python -m http.server 8080
 
 | Page | URL |
 | --- | --- |
-| Simulator | `http://localhost:8080/` |
+| Simulator (press `3` to drive) | `http://localhost:8080/` |
 | Geometry visual tests | `http://localhost:8080/tests/visual/` |
 
 ```bash
 npm test                      # unit tests (Node ≥ 22, built-in node:test, no installs)
 ```
 
-## Phase 1 roadmap
+## Roadmap
+
+| Phase | Weeks | Status |
+| --- | --- | --- |
+| 1. Simulator foundation | 1–4 | ✅ |
+| 2. Cars | 5–8 | ✅ |
+
+## Phase 1: simulator foundation
+
+![Road network editor](docs/screenshot-roads.png)
 
 | Week | Goal | Status |
 | --- | --- | --- |
@@ -81,6 +95,97 @@ Each edge carries `lanes` and `oneWay`. `RoadNetwork` turns the graph into road 
    - Through **simple bends** (a degree-2 node with the same lane layout), markings are mitred so they join without a gap.
 5. **Direction arrows:** each lane gets arrows at regular intervals. They are placed by transforming an arrow template polygon with a `Matrix`.
 
+## Phase 2: cars
+
+| Week | Goal | Status |
+| --- | --- | --- |
+| 5 | **Basic car:** position, rotation, speed, acceleration, braking, reverse, friction, steering, keyboard controls | ✅ |
+| 6 | **Better physics:** wheelbase, steering limits, realistic turning radius, separate acceleration and braking strengths, road friction | ✅ |
+| 7 | **Collision system:** cars as polygons, car–road and car–car collisions, collision debug view | ✅ |
+| 8 | **Traffic vehicles:** non-AI vehicles on routes, following distance, braking, basic obstacle avoidance | ✅ |
+
+![Driving with the HUD](docs/screenshot-drive.png)
+
+Physics, collisions and traffic are DOM-free like the Phase 1 modules. `Simulation` runs the whole thing headless, which is how the unit tests drive cars into walls and run a minute of traffic.
+
+### Units
+
+Physics is written in metres and seconds, then converted once (`src/car/units.js`). A 22-unit lane is 3.3 m wide, so 1 m ≈ 6.67 world units. The car is a 4.4 × 1.8 m hatchback with a 2.7 m wheelbase. The HUD shows real units: km/h, metres and g.
+
+### Week 5: basic car (`src/car/`)
+
+- **`Car`** holds a physics state (position, heading, signed speed, steering angle), its parameters and an `input` object. Anything can drive a car by writing `car.input = { forward, back, steer, handbrake }`: the keyboard does it now, traffic drivers do it too, and a later AI can do the same.
+- **`stepBasic()`** is the simple model. Throttle and brake change the speed, friction slows the car without reversing it, `back` reverses once stopped, and steering turns the car at a constant rate.
+- That constant turn rate is why the basic car feels like "moving a rectangle": it can spin while barely moving. Press `M` to switch back to it and compare.
+- **`KeyboardControls`**: `↑`/`W` throttle, `↓`/`S` brake then reverse, `←→`/`A D` steer, `Space` handbrake.
+
+### Week 6: better physics (`stepRealistic()`)
+
+The car is a **kinematic bicycle model**, measured at the centre of the car:
+
+```
+slip β  = atan(½ · tan δ)
+yaw ω   = v · cos β · tan δ / L          L = wheelbase, δ = front wheel angle
+turning radius (rear axle) R = L / tan δ
+```
+
+- **Steering limits.** The wheels move towards the target at a limited rate (110°/s), and centre faster (220°/s). The steering lock shrinks with speed: δmax = 35° / (1 + v / 15 m/s). That gives full lock when parking and stability on fast roads.
+- **Separate strengths.** The engine gives 3.5 m/s², falling off towards top speed, plus aerodynamic drag. Brakes give 9 m/s², reverse gives 2.5 m/s² and is capped at 20 km/h, and the handbrake locks the rear wheels.
+- **Road friction.** Every surface has a tyre grip coefficient μ (and rolling resistance). μ·g caps braking, traction and lateral acceleration:
+
+  | Surface | μ |
+  | --- | --- |
+  | Dry asphalt | 0.9 |
+  | Wet asphalt | 0.55 |
+  | Icy asphalt | 0.15 |
+  | Grass (off road) | 0.45 |
+
+- **Grip limit.** Past the grip limit the car understeers: it turns as tightly as the tyres allow and no more, and leaves **skid marks**. The same happens under hard braking.
+- `Y` cycles the road between dry, wet and icy.
+
+The tests check the model against its own equations. At low speed the car drives a circle of radius √((L/tan δ)² + (L/2)²) within 3%. It stops within the braking distance v²/2a that the grip allows. Lateral acceleration never exceeds μg.
+
+### Week 7: collision system (`src/collision/`)
+
+![Collision debug view](docs/screenshot-collisions.png)
+
+- **Shapes.** Every car is a rectangle `Polygon` from its pose. The road edge is the Phase 1 **border**: the outline of the union of all road surfaces, as line segments.
+- **Broad phase.** Border segments go into a **spatial hash** (uniform grid). A car only tests the segments in the cells its bounding box touches. Car pairs are pre-filtered by distance and bounding box.
+- **Narrow phase.** The **Separating Axis Theorem** (`sat.js`) works for convex polygons and for segments, which it treats as two-point shapes. It returns the minimum translation vector: a unit normal and a depth.
+- **Response.**
+  - The car is pushed out along the normal, and the velocity component into the wall is reflected with restitution 0.2.
+  - Coulomb friction acts on the sliding part.
+  - Cars only move along their heading, so the car is also turned slightly towards the direction it is deflected in. It scrapes along a wall instead of grinding to a halt.
+  - Car–car contacts separate both cars and exchange an equal-mass inelastic impulse.
+- **No tunnelling.** Physics runs in **substeps** small enough that no car moves more than 0.5 m per step, so a fast car can't skip over a thin border between frames. A unit test drives at full throttle into the border from four angles with 100 ms frames.
+- **Debug view (`C`).** It shows:
+  - every car's polygon: green when clear, red when hit;
+  - the spatial hash cells around the player, and the border segments it is tested against (cyan);
+  - contacts (red segment + normal arrow) and car–car normals (orange). They fade out over 0.6 s so one-frame hits are visible.
+- **Other tools.** `N` turns on ghost mode (the player ignores collisions). The HUD counts collisions, and a scrape counts once.
+
+### Week 8: traffic vehicles (`src/traffic/`)
+
+Traffic is **not AI**. Each vehicle gets a planned route and a rule-based driver that only touches the pedals and steering wheel, so traffic obeys exactly the same physics as the player.
+
+| Module | What it does |
+| --- | --- |
+| `RoutePlanner` | Builds a directed road graph that respects one-way roads. A route is a list of `{ road, dir }` steps. Routes are planned 10 steps ahead with a seeded RNG and extended as the car drives. There are no U-turns: a 2-lane road is narrower than a car's turning circle, so a dead end is where a route ends and the car fades out. |
+| `buildPath()` | Turns a route into a lane-accurate `Path`: lane centre lines (right-hand traffic, lane counted from the kerb) joined by **circular fillets** at nodes. Each arc's radius is the largest that keeps the car clear of the junction's inner corner and stays near its lane, but never tighter than the car's turning circle. |
+| `Path` | A polyline parameterised by arc length `s`. It supports point and tangent at `s`, signed curvature, and projection with a signed lateral offset. Progress, look-ahead and "is that car in my lane?" all become 1D questions. |
+| `TrafficDriver` | **Steering:** a Stanley controller at the front axle (heading error + cross-track error + curvature feed-forward). **Speed:** the Intelligent Driver Model. **Perception:** a lane corridor ahead. **Avoidance:** lane changes. |
+| `TrafficManager` | Spawns vehicles on random lanes with varied size, colour, desired speed (38–58 km/h) and following time (1.1–1.8 s). It replaces vehicles whose route ends. |
+
+- **Following distance and braking (IDM):** a = a<sub>max</sub> · [1 − (v/v₀)⁴ − (s\*/s)²], where s\* = s₀ + vT + vΔv / 2√(ab). The desired speed v₀ also drops ahead of curves, using a comfortable lateral acceleration (2.2 m/s²) and a braking-distance profile.
+- **Leader detection:**
+  - Another car counts if its centre is in the lane corridor, or any of its corners is in this car's swept width.
+  - The car also checks where every nearby car will be in 1.2 s, so it yields to vehicles about to cross its path at junctions.
+  - Two cars waiting for each other are resolved by id. Patience runs out after 6 s, and a car stuck for 12 s leaves.
+- **Basic obstacle avoidance.** A car stuck behind a slow or stopped vehicle for more than 1.2 s moves into a free adjacent lane going the same way. Its target slides sideways smoothly, then the route is rebuilt in the new lane.
+- **Sensors view (`X`).** It shows each vehicle's route (blue), its steering point, its leader (red, or dashed orange for a predicted crossing) and lane changes (purple dot).
+- **Edge collisions for traffic.** Traffic follows its lanes but isn't blocked by road borders: on a 2-lane road a car can't always keep its whole body inside the border at a tight corner. The player always is. Traffic does collide with cars, and the demo-map test runs a minute of dense traffic with **zero** collisions.
+- **Changing the network.** Traffic re-plans whenever you edit the network. `T` toggles traffic and `[` / `]` change the number of vehicles.
+
 ## Controls
 
 | Input | Action |
@@ -89,7 +194,7 @@ Each edge carries `lanes` and `oneWay`. `RoadNetwork` turns the graph into road 
 | Mouse wheel | Zoom at cursor |
 | Middle drag, or `Space` + drag | Pan |
 | `F` / `0` | Fit network / reset view |
-| `1` / `2` | Graph mode / Roads mode |
+| `1` / `2` / `3` | Graph mode / Roads mode / Drive mode |
 
 **Graph mode**
 
@@ -110,6 +215,30 @@ Each edge carries `lanes` and `oneWay`. `RoadNetwork` turns the graph into road 
 | `O` | Toggle one-way |
 | `R` | Reverse direction |
 
+**Drive mode**
+
+| Input | Action |
+| --- | --- |
+| `↑` / `W` | Throttle (brakes while reversing) |
+| `↓` / `S` | Brake, then reverse once stopped |
+| `←` `→` / `A` `D` | Steer |
+| `Space` | Handbrake |
+| `R` | Reset the car |
+| Mouse wheel | Zoom (the camera follows the car) |
+
+**Simulation** (any mode)
+
+| Input | Action |
+| --- | --- |
+| `T` | Traffic on / off |
+| `[` / `]` | Fewer / more vehicles |
+| `M` | Physics model: basic (week 5) / bicycle (week 6) |
+| `Y` | Road surface: dry / wet / icy |
+| `C` | Collision debug view |
+| `X` | Traffic sensors view |
+| `N` | Ghost mode (player ignores collisions) |
+| `P` | Pause |
+
 **Debug:** `F3` stats overlay · `B` geometry view · `V` graph skeleton · `G` grid snap · `Shift+G` grid · `H` help
 
 ## Project structure
@@ -118,26 +247,33 @@ Each edge carries `lanes` and `oneWay`. `RoadNetwork` turns the graph into road 
 index.html              app shell (toolbar, road panel, help, overlay)
 css/style.css
 src/
-  main.js               wiring: loop → input → camera → editor → road network → render
+  main.js               wiring: loop → input → camera → editor → road network → simulation → render
   engine/               loop.js · camera.js · input.js · debug.js
   math/                 utils.js · matrix.js
   primitives/           point.js · segment.js · polygon.js · envelope.js
   graph/                graph.js · graphEditor.js · storage.js
   road/                 road.js (lane layout) · roadNetwork.js (generation + rendering)
-  ui/controls.js        toolbar & road panel bindings
+  car/                  physics.js (basic + bicycle model) · car.js · units.js · keyboardControls.js · skidMarks.js
+  collision/            sat.js · spatialHash.js · collisionWorld.js (detection + response)
+  traffic/              path.js · routePlanner.js · trafficDriver.js (Stanley + IDM) · trafficManager.js
+  sim/simulation.js     cars, substepping, collisions, traffic, debug drawing
+  ui/                   controls.js (toolbar & road panel) · hud.js (car dashboard)
   data/demo.js          sample network
 tests/
-  unit/                 node:test suites for geometry, graph and road generation
+  unit/                 node:test suites: geometry, graph, roads, car physics, collisions, traffic
   visual/               interactive geometry test gallery
 ```
 
-Every module under `math/`, `primitives/`, `graph/graph.js` and `road/` is DOM-free. The unit tests run them directly in Node, and later phases can reuse them in workers.
+Every module under `math/`, `primitives/`, `graph/graph.js`, `road/`, `car/`, `collision/`, `traffic/` and `sim/` is DOM-free. The unit tests run them directly in Node, and later phases can reuse them in workers.
 
 ## Design notes
 
 - **World units vs pixels.** Geometry lives in world units. Editor handles are sized as `pixels / zoom`, so they stay the same size on screen at any zoom level.
 - **Rebuild on change, not every frame.** The graph's `version` counter means road geometry is regenerated only when something changes, including while you drag a node. The overlay shows the rebuild time.
 - **Bounding-box pre-filtering** keeps polygon union and marking clipping cheap, because only nearby roads are compared.
+- **One input interface for every driver.** The keyboard, traffic drivers and (later) AI all just set `car.input`. Physics doesn't know who is driving.
+- **Decide once per frame, integrate in substeps.** Drivers choose their inputs once per frame. Physics and collision resolution run in as many substeps as the fastest car needs.
+- **Deterministic traffic.** Routes, spawns and vehicle variety come from a seeded RNG, so the regression tests replay exactly.
 
 ## Licence
 

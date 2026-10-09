@@ -3,7 +3,7 @@ import { snap } from '../math/utils.js';
 import { Point } from '../primitives/point.js';
 import { Segment } from '../primitives/segment.js';
 
-export const EditorMode = { GRAPH: 'graph', ROAD: 'road' };
+export const EditorMode = { GRAPH: 'graph', ROAD: 'road', DRIVE: 'drive' };
 
 export const LANE_LIMITS = { min: 1, max: 6 };
 
@@ -16,6 +16,8 @@ export const LANE_LIMITS = { min: 1, max: 6 };
  *   left click a node         select it / connect the selection to it
  *   left drag a node          move it
  *   right click               deselect, or delete the hovered node / edge
+ *
+ * Drive mode — the editor is idle while the keyboard drives the car.
  *
  * Road mode — configure edges:
  *   left click a road         select it
@@ -60,6 +62,12 @@ export class GraphEditor {
     this.#dropStaleReferences();
 
     this.mouse = camera.screenToWorld(input.mouse.position);
+    if (this.mode === EditorMode.DRIVE) {
+      // Driving: the mouse doesn't edit anything.
+      this.hovered = null;
+      this.hoveredSegment = null;
+      return;
+    }
     const pickRadius = 12 / camera.zoom;
     this.hovered = graph.getNearestPoint(this.mouse, pickRadius);
     const segmentRadius =
@@ -196,6 +204,7 @@ export class GraphEditor {
 
   draw(ctx, { showGraph = true } = {}) {
     const px = 1 / this.camera.zoom;
+    if (this.mode === EditorMode.DRIVE) return;
     if (this.mode === EditorMode.GRAPH) this.#drawGraphMode(ctx, px, showGraph);
     else this.#drawRoadMode(ctx, px, showGraph);
   }

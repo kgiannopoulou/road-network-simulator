@@ -1,3 +1,6 @@
+import { KeyboardControls } from './car/keyboardControls.js';
+import { NO_INPUT } from './car/physics.js';
+import { toKmh } from './car/units.js';
 import { Camera } from './engine/camera.js';
 import { DebugOverlay, drawGrid, FpsCounter } from './engine/debug.js';
 import { Input, MouseButton } from './engine/input.js';
@@ -6,11 +9,14 @@ import { createDemoGraph } from './data/demo.js';
 import { EditorMode, GraphEditor } from './graph/graphEditor.js';
 import { downloadGraph, loadGraph, readGraphFile, saveGraph } from './graph/storage.js';
 import { RoadNetwork } from './road/roadNetwork.js';
+import { Simulation } from './sim/simulation.js';
 import { Controls } from './ui/controls.js';
+import { Hud } from './ui/hud.js';
 
 const PAN_SPEED = 700; // screen pixels per second
 const ZOOM_SENSITIVITY = 0.0015;
 const AUTOSAVE_DELAY = 0.5; // seconds after the last change
+const FOLLOW_STIFFNESS = 6; // camera catch-up rate in drive mode (1/s)
 
 const canvas = document.getElementById('world');
 const ctx = canvas.getContext('2d');
@@ -19,24 +25,33 @@ const camera = new Camera();
 const graph = loadGraph() ?? createDemoGraph();
 const network = new RoadNetwork(graph);
 const editor = new GraphEditor(graph, { camera, input, laneWidth: network.options.laneWidth });
+const sim = new Simulation(network, { trafficCount: 12 });
+const keyboard = new KeyboardControls(input);
 const fps = new FpsCounter();
 const overlay = new DebugOverlay(document.getElementById('debug'));
+const hud = new Hud(document.getElementById('car-panel'));
 
-const view = { showGrid: true, showGraph: true, debugGeometry: false };
+const view = { showGrid: true, showGraph: true, debugGeometry: false, collisionDebug: false, trafficDebug: false };
 let pixelRatio = 1;
 let panning = false;
 let savedVersion = graph.version;
 let saveTimer = 0;
 
+const flag = (get, set) => ({ get, set });
 const controls = new Controls({
   editor,
   network,
   flags: {
-    snapToGrid: { get: () => editor.snapToGrid, set: (v) => (editor.snapToGrid = v) },
-    showGrid: { get: () => view.showGrid, set: (v) => (view.showGrid = v) },
-    showGraph: { get: () => view.showGraph, set: (v) => (view.showGraph = v) },
-    debugGeometry: { get: () => view.debugGeometry, set: (v) => (view.debugGeometry = v) },
-    showOverlay: { get: () => overlay.visible, set: () => overlay.toggle() },
+    snapToGrid: flag(() => editor.snapToGrid, (v) => (editor.snapToGrid = v)),
+    showGrid: flag(() => view.showGrid, (v) => (view.showGrid = v)),
+    showGraph: flag(() => view.showGraph, (v) => (view.showGraph = v)),
+    debugGeometry: flag(() => view.debugGeometry, (v) => (view.debugGeometry = v)),
+    showOverlay: flag(() => overlay.visible, () => overlay.toggle()),
+    traffic: flag(() => sim.trafficEnabled, (v) => sim.setTrafficEnabled(v)),
+    collisionDebug: flag(() => view.collisionDebug, (v) => (view.collisionDebug = v)),
+    trafficDebug: flag(() => view.trafficDebug, (v) => (view.trafficDebug = v)),
+    ghost: flag(() => sim.ghost, (v) => (sim.ghost = v)),
+    paused: flag(() => sim.paused, (v) => (sim.paused = v)),
   },
   actions: {
     fit: () => camera.fit(graph.boundingBox()),
@@ -50,6 +65,9 @@ const controls = new Controls({
         console.error('Could not import graph:', err);
       }
     },
+    model: () => sim.toggleModel(),
+    weather: () => sim.cycleWeather(),
+    resetCar: () => sim.resetPlayer(),
   },
 });
 
@@ -65,7 +83,12 @@ function resize() {
   canvas.width = Math.round(w * pixelRatio);
   canvas.height = Math.round(h * pixelRatio);
   camera.setViewport(w, h);
+  // Panels sit below the toolbar, which wraps onto more rows on narrow screens.
+  const toolbarBottom = document.querySelector('.toolbar').getBoundingClientRect().bottom;
+  document.documentElement.style.setProperty('--panel-top', `${Math.round(toolbarBottom + 10)}px`);
 }
+
+const driving = () => editor.mode === EditorMode.DRIVE;
 
 // ---- update ---------------------------------------------------------------
 
@@ -73,6 +96,7 @@ function handleShortcuts() {
   const k = (code) => input.wasPressed(code);
   if (k('Digit1')) editor.setMode(EditorMode.GRAPH);
   if (k('Digit2')) editor.setMode(EditorMode.ROAD);
+  if (k('Digit3')) editor.setMode(EditorMode.DRIVE);
   if (k('KeyG')) {
     if (input.shift) view.showGrid = !view.showGrid;
     else editor.snapToGrid = !editor.snapToGrid;
@@ -83,41 +107,69 @@ function handleShortcuts() {
   if (k('KeyH')) controls.toggleHelp();
   if (k('KeyF')) camera.fit(graph.boundingBox());
   if (k('Digit0')) camera.reset();
+
+  // Simulation.
+  if (k('KeyT')) sim.setTrafficEnabled(!sim.trafficEnabled);
+  if (k('BracketLeft')) sim.setTrafficCount(sim.savedTrafficCount - 2);
+  if (k('BracketRight')) sim.setTrafficCount(sim.savedTrafficCount + 2);
+  if (k('KeyM')) sim.toggleModel();
+  if (k('KeyY')) sim.cycleWeather();
+  if (k('KeyC')) view.collisionDebug = !view.collisionDebug;
+  if (k('KeyX')) view.trafficDebug = !view.trafficDebug;
+  if (k('KeyN')) sim.ghost = !sim.ghost;
+  if (k('KeyP')) sim.paused = !sim.paused;
+  if (driving() && k('KeyR')) sim.resetPlayer();
 }
 
-function updateCamera(dt) {
-  // Keyboard movement, scaled by delta time so speed is frame-rate independent.
-  let dx = 0;
-  let dy = 0;
-  if (input.isDown('KeyW') || input.isDown('ArrowUp')) dy -= 1;
-  if (input.isDown('KeyS') || input.isDown('ArrowDown')) dy += 1;
-  if (input.isDown('KeyA') || input.isDown('ArrowLeft')) dx -= 1;
-  if (input.isDown('KeyD') || input.isDown('ArrowRight')) dx += 1;
-  if (dx || dy) {
-    const len = Math.hypot(dx, dy);
-    const speed = (PAN_SPEED * dt) / camera.zoom / len;
-    camera.move(dx * speed, dy * speed);
+function updateCamera(dt, rawDelta) {
+  const spaceHeld = !driving() && input.isDown('Space');
+
+  if (driving()) {
+    // Follow the car, looking a little ahead of it. Uses real time so the
+    // camera still moves while the simulation is paused.
+    const car = sim.player;
+    const target = car.position.add(car.velocity.scale(0.35));
+    const t = 1 - Math.exp(-FOLLOW_STIFFNESS * rawDelta);
+    camera.center = camera.center.add(target.subtract(camera.center).scale(t));
+  } else {
+    // Keyboard movement, scaled by delta time so speed is frame-rate independent.
+    let dx = 0;
+    let dy = 0;
+    if (input.isDown('KeyW') || input.isDown('ArrowUp')) dy -= 1;
+    if (input.isDown('KeyS') || input.isDown('ArrowDown')) dy += 1;
+    if (input.isDown('KeyA') || input.isDown('ArrowLeft')) dx -= 1;
+    if (input.isDown('KeyD') || input.isDown('ArrowRight')) dx += 1;
+    if (dx || dy) {
+      const len = Math.hypot(dx, dy);
+      const speed = (PAN_SPEED * rawDelta) / camera.zoom / len;
+      camera.move(dx * speed, dy * speed);
+    }
   }
 
   // Mouse drag panning: middle button, or Space + left button.
-  const spaceHeld = input.isDown('Space');
   panning =
-    input.isMouseDown(MouseButton.MIDDLE) || (spaceHeld && input.isMouseDown(MouseButton.LEFT));
+    !driving() &&
+    (input.isMouseDown(MouseButton.MIDDLE) || (spaceHeld && input.isMouseDown(MouseButton.LEFT)));
   if (panning) camera.panScreen(input.mouse.delta.x, input.mouse.delta.y);
 
   if (input.mouse.wheel) {
-    camera.zoomAt(Math.exp(-input.mouse.wheel * ZOOM_SENSITIVITY), input.mouse.position);
+    const anchor = driving()
+      ? { x: camera.viewport.width / 2, y: camera.viewport.height / 2 }
+      : input.mouse.position;
+    camera.zoomAt(Math.exp(-input.mouse.wheel * ZOOM_SENSITIVITY), anchor);
   }
 
-  canvas.style.cursor = panning
-    ? 'grabbing'
-    : spaceHeld
-      ? 'grab'
-      : editor.dragging
-        ? 'move'
-        : editor.hovered || editor.hoveredSegment
-          ? 'pointer'
-          : 'crosshair';
+  canvas.style.cursor = driving()
+    ? 'default'
+    : panning
+      ? 'grabbing'
+      : spaceHeld
+        ? 'grab'
+        : editor.dragging
+          ? 'move'
+          : editor.hovered || editor.hoveredSegment
+            ? 'pointer'
+            : 'crosshair';
   return spaceHeld;
 }
 
@@ -133,14 +185,19 @@ function autosave(rawDelta) {
 function update(dt, rawDelta) {
   fps.tick(rawDelta);
   handleShortcuts();
-  const spaceHeld = updateCamera(dt);
+  const spaceHeld = updateCamera(dt, rawDelta);
   editor.update(panning || spaceHeld);
   network.update();
+  // Re-plan traffic once a graph edit is finished (not on every drag frame).
+  if (sim.needsSync() && !editor.dragging) sim.syncRoads();
+  sim.update(dt, driving() ? keyboard.read() : NO_INPUT);
   autosave(rawDelta);
   controls.sync();
+  hud.update(sim, rawDelta, driving());
 
   const mouseWorld = editor.mouse;
   const stats = network.stats();
+  const car = sim.player.state;
   overlay.set('FPS', `${fps.fps.toFixed(0)}  (${fps.frameMs.toFixed(1)} ms, worst ${fps.worstMs.toFixed(1)} ms)`);
   overlay.set('Frame', `${loop.frame}  dt ${(dt * 1000).toFixed(1)} ms`);
   overlay.set('Camera', `${camera.center.x.toFixed(0)}, ${camera.center.y.toFixed(0)}  zoom ${camera.zoom.toFixed(2)}`);
@@ -149,6 +206,9 @@ function update(dt, rawDelta) {
   overlay.set('Roads', `${stats.roads} roads, ${stats.borders} border segs`);
   overlay.set('Markings', `${stats.markings} lines, ${stats.arrows} arrows`);
   overlay.set('Rebuild', `${network.buildMs.toFixed(2)} ms`);
+  overlay.set('Car', `${car.x.toFixed(0)}, ${car.y.toFixed(0)}  ${toKmh(car.speed).toFixed(0)} km/h`);
+  overlay.set('Traffic', `${sim.traffic.cars.length} vehicles`);
+  overlay.set('Sim', `${sim.stepMs.toFixed(2)} ms, ${sim.substeps} substep${sim.substeps > 1 ? 's' : ''}${sim.paused ? ' (paused)' : ''}`);
   overlay.update(rawDelta);
 
   input.endFrame();
@@ -164,6 +224,11 @@ function render() {
   camera.apply(ctx, pixelRatio);
   if (view.showGrid) drawGrid(ctx, camera);
   network.draw(ctx, { debug: view.debugGeometry });
+  sim.draw(ctx, {
+    collisionDebug: view.collisionDebug,
+    trafficDebug: view.trafficDebug,
+    pixel: 1 / camera.zoom,
+  });
   editor.draw(ctx, { showGraph: view.showGraph });
 }
 
@@ -171,9 +236,11 @@ const loop = new GameLoop({ update, render });
 
 window.addEventListener('resize', resize);
 resize();
+network.update();
+sim.syncRoads();
 camera.fit(graph.boundingBox());
 camera.home = { x: camera.center.x, y: camera.center.y, zoom: camera.zoom };
 loop.start();
 
 // Handy for poking at things from the browser console.
-window.sim = { graph, network, editor, camera, input, loop };
+window.sim = { graph, network, editor, camera, input, loop, sim };
