@@ -1,7 +1,7 @@
 {
   "name": "road-network-simulator",
-  "version": "0.8.0",
-  "description": "A 2D road network and traffic simulator built from scratch on HTML Canvas: geometry library, road graph editor, procedural roads, drivable car physics, collisions and traffic vehicles.",
+  "version": "0.12.0",
+  "description": "A 2D road network and traffic simulator built from scratch on HTML Canvas: geometry library, road graph editor, procedural roads, drivable car physics, collisions, traffic vehicles and simulated sensors (rays, LiDAR, radar, GPS, IMU).",
   "type": "module",
   "private": true,
   "scripts": {

@@ -4,6 +4,7 @@ import { SkidMarks } from '../car/skidMarks.js';
 import { m } from '../car/units.js';
 import { CollisionWorld } from '../collision/collisionWorld.js';
 import { clamp } from '../math/utils.js';
+import { SensorSuite } from '../sensors/sensorSuite.js';
 import { Point } from '../primitives/point.js';
 import { RoutePlanner } from '../traffic/routePlanner.js';
 import { TrafficManager } from '../traffic/trafficManager.js';
@@ -29,6 +30,7 @@ export class Simulation {
     this.traffic = new TrafficManager({ count: trafficCount, seed });
     this.player = new Car({ kind: 'player', color: '#ffd54a' });
     this.skids = new SkidMarks();
+    this.sensors = new SensorSuite(this.player, this.world);
 
     this.model = PhysicsModel.REALISTIC;
     this.weather = 'dry';
@@ -88,6 +90,7 @@ export class Simulation {
     this.player.teleport(p.x, p.y, b.subtract(a).angle());
     this.player.collisionCount = 0;
     this.skids.clear();
+    this.sensors.reset();
   }
 
   setTrafficEnabled(enabled) {
@@ -171,12 +174,13 @@ export class Simulation {
 
     this.substeps = n;
     this.time += dt;
+    this.sensors.update(this.time, dt, this.cars);
     this.stepMs = performance.now() - start;
   }
 
   // ---- drawing --------------------------------------------------------------
 
-  draw(ctx, { collisionDebug = false, trafficDebug = false, pixel = 1 } = {}) {
+  draw(ctx, { collisionDebug = false, trafficDebug = false, showSensors = false, pixel = 1 } = {}) {
     this.skids.draw(ctx);
     if (trafficDebug) this.#drawTrafficDebug(ctx, pixel);
     for (const car of this.cars) {
@@ -184,6 +188,7 @@ export class Simulation {
       const highlight = collisionDebug ? (hitRecently ? '#ff3b30' : 'rgba(80, 255, 140, 0.9)') : null;
       car.draw(ctx, { highlight });
     }
+    if (showSensors) this.sensors.draw(ctx, pixel);
     if (this.ghost) {
       this.player.polygon().draw(ctx, { fill: 'rgba(255,255,255,0.15)', stroke: '#ffffff', lineWidth: pixel });
     }

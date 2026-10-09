@@ -326,6 +326,143 @@ button.confirm {
   border-color: var(--danger);
 }
 
+.sensor-panel {
+  right: 10px;
+  top: var(--panel-top, 64px);
+  width: 290px;
+  max-height: calc(100% - var(--panel-top, 64px) - 54px);
+  overflow: auto;
+}
+
+body.sensors-open .car-panel {
+  left: 10px;
+  right: auto;
+}
+
+body.sensors-open .road-panel {
+  right: 310px;
+}
+
+.sensor-panel .sub {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 12px;
+}
+
+#sensor-view {
+  display: block;
+  width: 100%;
+  border-radius: 6px;
+  margin-bottom: 6px;
+}
+
+.sensor-row {
+  padding: 5px 0;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.sensor-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sensor-head label {
+  flex: 1;
+  font-weight: 600;
+}
+
+.sensor-line {
+  margin-top: 2px;
+  color: var(--muted);
+  font: 11px/1.4 ui-monospace, Consolas, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.badge {
+  font-size: 10px;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+}
+
+.badge[data-status='ok'] {
+  background: rgba(48, 209, 88, 0.18);
+  color: #30d158;
+}
+
+.badge[data-status='failed'] {
+  background: rgba(255, 69, 58, 0.2);
+  color: #ff453a;
+}
+
+.badge[data-status='stuck'],
+.badge[data-status='stale'] {
+  background: rgba(255, 159, 10, 0.2);
+  color: #ff9f0a;
+}
+
+.eye {
+  padding: 1px 6px;
+  color: var(--muted);
+}
+
+.eye.active {
+  color: var(--accent);
+}
+
+select {
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: #1c222a;
+  border: 1px solid var(--panel-border);
+  border-radius: 5px;
+  padding: 2px 4px;
+}
+
+.cfg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+}
+
+.cfg > span {
+  width: 66px;
+  color: var(--muted);
+}
+
+.cfg input[type='range'] {
+  flex: 1;
+  accent-color: var(--accent);
+}
+
+.cfg output {
+  width: 52px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.presets {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.presets button {
+  flex: 1;
+}
+
+.presets button.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 [hidden] {
   display: none !important;
 }
@@ -337,7 +474,8 @@ button.confirm {
   }
   .help,
   .road-panel,
-  .car-panel {
+  .car-panel,
+  .sensor-panel {
     left: 10px;
     right: 10px;
     width: auto;

@@ -2,10 +2,11 @@
 
 A 2D road network simulator built from scratch with plain HTML, CSS and JavaScript ES modules on a single `<canvas>`. There is no framework, no bundler and no runtime dependencies.
 
-The repository currently holds two phases:
+The repository currently holds three phases:
 
 - **Phase 1: simulator foundation.** The engine, a geometry library, an editable road graph, and procedural road generation with lanes, centre lines and direction arrows.
 - **Phase 2: cars.** A drivable car with a bicycle-model physics engine, SAT collision detection against road borders and other cars, and traffic vehicles that follow routes, keep their distance and get around obstacles.
+- **Phase 3: sensors.** A ray sensor, a spinning LiDAR, radar, GPS and an IMU behind one standard API. Each sensor can be given noise, latency, limited range, dropped measurements and failures, so a future autonomous driver can't rely on perfect information.
 
 **Milestone #1 reached:** a manually drivable traffic simulator.
 
@@ -36,6 +37,7 @@ npm test                      # unit tests (Node ≥ 22, built-in node:test, no 
 | --- | --- | --- |
 | 1. Simulator foundation | 1–4 | ✅ |
 | 2. Cars | 5–8 | ✅ |
+| 3. Sensors | 9–12 | ✅ |
 
 ## Phase 1: simulator foundation
 
@@ -182,9 +184,88 @@ Traffic is **not AI**. Each vehicle gets a planned route and a rule-based driver
   - The car also checks where every nearby car will be in 1.2 s, so it yields to vehicles about to cross its path at junctions.
   - Two cars waiting for each other are resolved by id. Patience runs out after 6 s, and a car stuck for 12 s leaves.
 - **Basic obstacle avoidance.** A car stuck behind a slow or stopped vehicle for more than 1.2 s moves into a free adjacent lane going the same way. Its target slides sideways smoothly, then the route is rebuilt in the new lane.
-- **Sensors view (`X`).** It shows each vehicle's route (blue), its steering point, its leader (red, or dashed orange for a predicted crossing) and lane changes (purple dot).
+- **Routes view (`X`).** It shows each vehicle's route (blue), its steering point, its leader (red, or dashed orange for a predicted crossing) and lane changes (purple dot).
 - **Edge collisions for traffic.** Traffic follows its lanes but isn't blocked by road borders: on a 2-lane road a car can't always keep its whole body inside the border at a tight corner. The player always is. Traffic does collide with cars, and the demo-map test runs a minute of dense traffic with **zero** collisions.
 - **Changing the network.** Traffic re-plans whenever you edit the network. `T` toggles traffic and `[` / `]` change the number of vehicles.
+
+## Phase 3: sensors
+
+| Week | Goal | Status |
+| --- | --- | --- |
+| 9 | **Ray sensors:** configurable raycasting against road boundaries and vehicles, every ray drawn | ✅ |
+| 10 | **Simulated LiDAR:** many more rays, distance measurements, point-cloud view | ✅ |
+| 11 | **Radar, GPS and IMU:** radar distance and relative velocity, GPS position and heading, IMU acceleration and rotation; one standard sensor API | ✅ |
+| 12 | **Sensor imperfections:** configurable noise, latency, limited range, dropped measurements and sensor failure | ✅ |
+
+![Sensors on the player car](docs/screenshot-sensors.png)
+
+Press `I` to open the sensor panel and draw every sensor on the map. The sensors are mounted on the player's car, which a later phase will turn into the autonomous car.
+
+### One sensor API (`src/sensors/sensor.js`)
+
+Every sensor extends `Sensor` and is used the same way:
+
+```js
+const radar = sim.sensors.read('radar');
+// { sensor: 'radar', type: 'radar', time, receivedAt, age, data: { targets: [...] } }
+sim.sensors.readAll(); // { rays, lidar, radar, gps, imu }
+```
+
+- **Timing.** A sensor samples the world at its own rate (rays 30 Hz, LiDAR packets 40 Hz, radar 20 Hz, GPS 5 Hz, IMU 100 Hz; never faster than the frame rate). `time` is when the world was sampled and `receivedAt` is when the reading arrives. Consumers only ever see **delivered** readings.
+- **Units.** All data is metric: metres, m/s, m/s² and radians in the world frame (0 = +x, clockwise on screen). That is the same convention the car physics uses.
+- **Subclasses.** A new sensor implements `measure(env)` (the ideal reading from ground truth) and `degrade(data, imperfections)` (the same reading after noise, range limit and drops). The base class handles rate, latency, whole-reading drop-outs and failure modes.
+- **Shared ray casting.** `RayCaster` collects the road-border segments in range from the spatial hash (and nearby vehicles) once. It can then cast hundreds of rays for a LiDAR packet.
+
+### Week 9: ray sensor (`raySensor.js`)
+
+```
+      \  |  /
+        \ | /
+         CAR
+```
+
+- `rayCount` rays fanned over `spread` (a 360° ring doesn't repeat its first ray), each up to `range` metres. Each ray reports the distance to the first road border or vehicle and what it hit.
+- **On the map:** yellow up to the hit, black beyond it; an orange dot marks a road edge and a red dot a vehicle.
+- **In the panel:** sliders change the ray count (1–41), spread (10–360°) and range (5–60 m) live.
+
+### Week 10: simulated LiDAR (`lidar.js`)
+
+- **Spinning beam.** A single beam spins at 5/10/20 Hz and fires 180–1440 times per turn (360 by default). Like a real unit it **streams packets**, each a slice of the turn. A scan is therefore smeared over the rotation: the first points of a turn are up to 100 ms older than the last.
+- **Readings.** `read('lidar')` returns the last full revolution, assembled from the packets. Each point has its angle (car frame), its distance, what it hit, and its world position.
+- **Point cloud.** Points are drawn coloured by distance (warm = near, cool = far) and fade with age within the turn. The sweeping beam is drawn too.
+
+### Week 11: radar, GPS, IMU (`radar.js`, `gps.js`, `imu.js`)
+
+| Sensor | Reports | Model |
+| --- | --- | --- |
+| Radar | `targets: [{ id, range, bearing, rangeRate }]` | 40° forward cone, 80 m. Sees vehicles (not kerbs) at the nearest point of their body. **Range rate** is the relative velocity along the line of sight (negative = closing). Targets hidden behind another vehicle or a road edge are not reported. |
+| GPS | `x, y, heading, speed, accuracy` | Position error = slowly **drifting** bias (Gauss–Markov, 30 s correlation) + white noise, so the fix wanders like a real receiver's instead of jittering. Heading is course over ground, so it is `null` below 1 m/s. `accuracy` is the receiver's own 1σ estimate. |
+| IMU | `ax, ay, yawRate` | Longitudinal and lateral acceleration in the car frame, plus yaw rate. Each axis has white noise plus a **bias** fixed at power-on, which is what makes dead reckoning drift. |
+
+- **On the map:** the radar's cone, with range-rate arrows on its targets; the GPS fix, its trail and 95 % circle; and the IMU's acceleration vector.
+- **The panel's car-centred view** plots what the sensors report, heading up. That includes the LiDAR cloud, the rays and radar targets (labelled with range rate), the GPS fix relative to the true position (its error), and a g-circle for the IMU.
+
+### Week 12: sensor imperfections (`imperfections.js`)
+
+![Degraded sensors](docs/screenshot-sensors-degraded.png)
+
+Each sensor has a **datasheet** (`spec`): its 1σ noise per quantity, typical latency and drop-out rate. Global knobs are multiples of those values, so "noise ×2" doubles every sensor's *own* noise.
+
+| Imperfection | Effect |
+| --- | --- |
+| Noise | Gaussian noise on every quantity (range, bearing, range rate, position, heading, acceleration…), plus the GPS drift and IMU bias. |
+| Latency | Readings are queued and delivered `latency` seconds after sampling, so the car sees the past. On the map the ray fan visibly lags behind a fast car. |
+| Limited range | The range scale shrinks every sensor's reach. |
+| Dropped measurements | GPS and IMU lose whole readings. Rays, LiDAR points and radar targets are dropped one by one. |
+| Failure | Per sensor: `dead` (stops reporting; the last reading just grows old), `stuck` (keeps sending the same frozen values with *fresh* timestamps, which is the hard case to detect), `intermittent` (frequent short drop-outs), plus random dead spells per minute for every sensor. |
+
+- **Presets** (`U` cycles them):
+  - **Perfect:** everything off.
+  - **Realistic:** datasheet values.
+  - **Degraded:** 3× noise, 4× latency, 5× drop-outs, 60 % range, 2 random failures a minute and an intermittent GPS.
+- **Panel controls:** sliders fine-tune each knob, and each sensor row has its own failure selector.
+- **Status badges** are ground truth for debugging: `ok`, `failed`, `stuck`, `stale`, `off`. A consumer of `read()` only sees what a real car would: readings, their timestamps and their age.
+- **Reproducible noise.** All noise comes from seeded RNGs, so the tests replay exactly.
 
 ## Controls
 
@@ -235,9 +316,11 @@ Traffic is **not AI**. Each vehicle gets a planned route and a rule-based driver
 | `M` | Physics model: basic (week 5) / bicycle (week 6) |
 | `Y` | Road surface: dry / wet / icy |
 | `C` | Collision debug view |
-| `X` | Traffic sensors view |
+| `X` | Traffic routes view |
 | `N` | Ghost mode (player ignores collisions) |
 | `P` | Pause |
+| `I` | Sensor panel + sensor views on the map |
+| `U` | Sensor imperfections: perfect / realistic / degraded |
 
 **Debug:** `F3` stats overlay · `B` geometry view · `V` graph skeleton · `G` grid snap · `Shift+G` grid · `H` help
 
@@ -256,15 +339,17 @@ src/
   car/                  physics.js (basic + bicycle model) · car.js · units.js · keyboardControls.js · skidMarks.js
   collision/            sat.js · spatialHash.js · collisionWorld.js (detection + response)
   traffic/              path.js · routePlanner.js · trafficDriver.js (Stanley + IDM) · trafficManager.js
-  sim/simulation.js     cars, substepping, collisions, traffic, debug drawing
-  ui/                   controls.js (toolbar & road panel) · hud.js (car dashboard)
+  sensors/              sensor.js (common API) · raycast.js · raySensor.js · lidar.js · radar.js · gps.js · imu.js
+                        imperfections.js · noise.js · sensorSuite.js
+  sim/simulation.js     cars, substepping, collisions, traffic, sensors, debug drawing
+  ui/                   controls.js (toolbar & road panel) · hud.js (car dashboard) · sensorPanel.js
   data/demo.js          sample network
 tests/
-  unit/                 node:test suites: geometry, graph, roads, car physics, collisions, traffic
+  unit/                 node:test suites: geometry, graph, roads, car physics, collisions, traffic, sensors
   visual/               interactive geometry test gallery
 ```
 
-Every module under `math/`, `primitives/`, `graph/graph.js`, `road/`, `car/`, `collision/`, `traffic/` and `sim/` is DOM-free. The unit tests run them directly in Node, and later phases can reuse them in workers.
+Every module under `math/`, `primitives/`, `graph/graph.js`, `road/`, `car/`, `collision/`, `traffic/`, `sensors/` and `sim/` is DOM-free. The unit tests run them directly in Node, and later phases can reuse them in workers.
 
 ## Design notes
 
@@ -274,6 +359,7 @@ Every module under `math/`, `primitives/`, `graph/graph.js`, `road/`, `car/`, `c
 - **One input interface for every driver.** The keyboard, traffic drivers and (later) AI all just set `car.input`. Physics doesn't know who is driving.
 - **Decide once per frame, integrate in substeps.** Drivers choose their inputs once per frame. Physics and collision resolution run in as many substeps as the fastest car needs.
 - **Deterministic traffic.** Routes, spawns and vehicle variety come from a seeded RNG, so the regression tests replay exactly.
+- **Ground truth and perception stay separate.** Sensors read the simulation's true state, but everything downstream gets only delivered sensor readings. The next phases can't cheat by peeking at the world.
 
 ## Licence
 

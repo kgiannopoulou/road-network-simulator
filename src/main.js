@@ -12,6 +12,7 @@ import { RoadNetwork } from './road/roadNetwork.js';
 import { Simulation } from './sim/simulation.js';
 import { Controls } from './ui/controls.js';
 import { Hud } from './ui/hud.js';
+import { SensorPanel } from './ui/sensorPanel.js';
 
 const PAN_SPEED = 700; // screen pixels per second
 const ZOOM_SENSITIVITY = 0.0015;
@@ -30,6 +31,8 @@ const keyboard = new KeyboardControls(input);
 const fps = new FpsCounter();
 const overlay = new DebugOverlay(document.getElementById('debug'));
 const hud = new Hud(document.getElementById('car-panel'));
+const sensorPanel = new SensorPanel(document.getElementById('sensor-panel'), sim.sensors);
+const PRESET_CYCLE = ['perfect', 'realistic', 'degraded'];
 
 const view = { showGrid: true, showGraph: true, debugGeometry: false, collisionDebug: false, trafficDebug: false };
 let pixelRatio = 1;
@@ -52,6 +55,7 @@ const controls = new Controls({
     trafficDebug: flag(() => view.trafficDebug, (v) => (view.trafficDebug = v)),
     ghost: flag(() => sim.ghost, (v) => (sim.ghost = v)),
     paused: flag(() => sim.paused, (v) => (sim.paused = v)),
+    showSensors: flag(() => sensorPanel.visible, (v) => sensorPanel.toggle(v)),
   },
   actions: {
     fit: () => camera.fit(graph.boundingBox()),
@@ -119,6 +123,11 @@ function handleShortcuts() {
   if (k('KeyN')) sim.ghost = !sim.ghost;
   if (k('KeyP')) sim.paused = !sim.paused;
   if (driving() && k('KeyR')) sim.resetPlayer();
+  if (k('KeyI')) sensorPanel.toggle();
+  if (k('KeyU')) {
+    const next = PRESET_CYCLE[(PRESET_CYCLE.indexOf(sim.sensors.preset) + 1) % PRESET_CYCLE.length];
+    sensorPanel.setPreset(next);
+  }
 }
 
 function updateCamera(dt, rawDelta) {
@@ -194,6 +203,8 @@ function update(dt, rawDelta) {
   autosave(rawDelta);
   controls.sync();
   hud.update(sim, rawDelta, driving());
+  sensorPanel.update(rawDelta);
+  document.body.classList.toggle('driving', driving());
 
   const mouseWorld = editor.mouse;
   const stats = network.stats();
@@ -208,6 +219,7 @@ function update(dt, rawDelta) {
   overlay.set('Rebuild', `${network.buildMs.toFixed(2)} ms`);
   overlay.set('Car', `${car.x.toFixed(0)}, ${car.y.toFixed(0)}  ${toKmh(car.speed).toFixed(0)} km/h`);
   overlay.set('Traffic', `${sim.traffic.cars.length} vehicles`);
+  overlay.set('Sensors', `${sim.sensors.preset} · ${sim.sensors.sensors.filter((s) => s.status === 'ok').length}/${sim.sensors.sensors.length} ok`);
   overlay.set('Sim', `${sim.stepMs.toFixed(2)} ms, ${sim.substeps} substep${sim.substeps > 1 ? 's' : ''}${sim.paused ? ' (paused)' : ''}`);
   overlay.update(rawDelta);
 
@@ -227,6 +239,7 @@ function render() {
   sim.draw(ctx, {
     collisionDebug: view.collisionDebug,
     trafficDebug: view.trafficDebug,
+    showSensors: sensorPanel.visible,
     pixel: 1 / camera.zoom,
   });
   editor.draw(ctx, { showGraph: view.showGraph });

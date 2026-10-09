@@ -24,9 +24,13 @@
         <button data-action="model" title="Physics model: basic (week 5) or bicycle model (week 6) (M)">Physics: <span class="value" data-label="model">Realistic</span> <kbd>M</kbd></button>
         <button data-action="weather" title="Road surface grip: dry / wet / icy (Y)">Road: <span class="value" data-label="weather">Dry</span> <kbd>Y</kbd></button>
         <button data-toggle="collisionDebug" title="Collision debug view (C)">Collisions <kbd>C</kbd></button>
-        <button data-toggle="trafficDebug" title="Traffic routes, steering targets and leaders (X)">Sensors <kbd>X</kbd></button>
+        <button data-toggle="trafficDebug" title="Traffic routes, steering targets and leaders (X)">Routes <kbd>X</kbd></button>
         <button data-toggle="ghost" title="Player car ignores collisions (N)">Ghost <kbd>N</kbd></button>
         <button data-toggle="paused" title="Pause the simulation (P)">Pause <kbd>P</kbd></button>
+      </div>
+
+      <div class="group" aria-label="Sensors">
+        <button data-toggle="showSensors" title="Sensor panel and sensor views (I)">Sensors <kbd>I</kbd></button>
       </div>
 
       <div class="group" aria-label="View">
@@ -90,6 +94,47 @@
       </div>
     </aside>
 
+    <aside id="sensor-panel" class="panel sensor-panel" hidden>
+      <h2>Sensors <span class="sub">what the car sees</span></h2>
+      <canvas id="sensor-view" width="250" height="210" aria-label="Car-centred sensor view"></canvas>
+      <div id="sensor-rows"></div>
+
+      <h3>Ray sensor</h3>
+      <div class="cfg"><span>Rays</span><input type="range" min="1" max="41" step="1" value="9" data-cfg="rayCount" /><output data-out="rayCount"></output></div>
+      <div class="cfg"><span>Spread</span><input type="range" min="10" max="360" step="5" value="140" data-cfg="spread" /><output data-out="spread"></output></div>
+      <div class="cfg"><span>Range</span><input type="range" min="5" max="60" step="1" value="25" data-cfg="rayRange" /><output data-out="rayRange"></output></div>
+
+      <h3>LiDAR</h3>
+      <div class="cfg">
+        <span>Rays</span>
+        <select data-cfg="lidarRays">
+          <option value="180">180</option>
+          <option value="360" selected>360</option>
+          <option value="720">720</option>
+          <option value="1440">1440</option>
+        </select>
+        <span>Spin</span>
+        <select data-cfg="lidarHz">
+          <option value="5">5 Hz</option>
+          <option value="10" selected>10 Hz</option>
+          <option value="20">20 Hz</option>
+        </select>
+      </div>
+
+      <h3>Imperfections <kbd>U</kbd></h3>
+      <div class="presets">
+        <button data-preset="perfect">Perfect</button>
+        <button data-preset="realistic">Realistic</button>
+        <button data-preset="degraded">Degraded</button>
+      </div>
+      <div class="cfg"><span>Noise</span><input type="range" min="0" max="5" step="0.1" data-cfg="knob-noise" /><output data-out="knob-noise"></output></div>
+      <div class="cfg"><span>Latency</span><input type="range" min="0" max="10" step="0.5" data-cfg="knob-latency" /><output data-out="knob-latency"></output></div>
+      <div class="cfg"><span>Dropped</span><input type="range" min="0" max="10" step="0.5" data-cfg="knob-drop" /><output data-out="knob-drop"></output></div>
+      <div class="cfg"><span>Range</span><input type="range" min="0.2" max="1" step="0.05" data-cfg="knob-range" /><output data-out="knob-range"></output></div>
+      <div class="cfg"><span>Failures</span><input type="range" min="0" max="10" step="0.5" data-cfg="knob-failureRate" /><output data-out="knob-failureRate"></output></div>
+      <p class="hint">Noise, latency and drop-outs are multiples of each sensor's datasheet values. Pick a failure per sensor above.</p>
+    </aside>
+
     <aside id="help" class="panel help" hidden>
       <h2>Controls</h2>
       <h3>Camera</h3>
@@ -122,8 +167,13 @@
       <ul>
         <li><kbd>T</kbd> traffic · <kbd>[</kbd>/<kbd>]</kbd> fewer / more vehicles</li>
         <li><kbd>M</kbd> physics model · <kbd>Y</kbd> dry / wet / icy road</li>
-        <li><kbd>C</kbd> collision debug · <kbd>X</kbd> traffic sensors</li>
+        <li><kbd>C</kbd> collision debug · <kbd>X</kbd> traffic routes</li>
         <li><kbd>N</kbd> ghost (no collisions) · <kbd>P</kbd> pause</li>
+      </ul>
+      <h3>Sensors</h3>
+      <ul>
+        <li><kbd>I</kbd> sensor panel and sensor views on the map</li>
+        <li><kbd>U</kbd> cycle perfect / realistic / degraded sensors</li>
       </ul>
       <h3>Debug</h3>
       <ul>
