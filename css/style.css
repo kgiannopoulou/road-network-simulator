@@ -698,6 +698,77 @@ button:disabled {
   font-size: 14px;
 }
 
+.navigation-panel .row > span {
+  width: 72px;
+  flex: none;
+  color: var(--muted);
+}
+
+.nav-summary {
+  margin: 8px 0 4px;
+  font-size: 12px;
+}
+
+.nav-summary .muted,
+.nav-steps .muted {
+  color: var(--muted);
+}
+
+.nav-steps {
+  margin: 4px 0 8px;
+  padding-left: 0;
+  list-style: none;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.nav-steps .icon {
+  display: inline-block;
+  width: 20px;
+  color: var(--accent);
+  text-align: center;
+}
+
+.nav-live dl {
+  display: grid;
+  grid-template-columns: 76px 1fr;
+  gap: 4px 8px;
+  margin: 8px 0;
+  font-size: 12px;
+}
+
+.nav-live dt {
+  color: var(--muted);
+}
+
+.nav-live dd {
+  margin: 0;
+}
+
+.progress {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.progress i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: #3987e5;
+}
+
+.nav-result {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.nav-result b {
+  color: var(--text);
+}
+
 [hidden] {
   display: none !important;
 }

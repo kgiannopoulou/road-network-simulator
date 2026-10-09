@@ -171,6 +171,9 @@ export class Controls {
 
   #statusText() {
     const e = this.editor;
+    if (e.mode === EditorMode.NAVIGATE) {
+      return '<b>Navigate</b> · click a road for START, another for DESTINATION · scroll to zoom · Space+drag to pan · <kbd>1</kbd> back to editing';
+    }
     if (e.mode === EditorMode.TRAIN) {
       return '<b>Train</b> · pick a course and press Start · <kbd>[</kbd>/<kbd>]</kbd> speed · <kbd>Z</kbd> rendering · <kbd>P</kbd> pause · camera follows the leader · <kbd>1</kbd> back to editing';
     }

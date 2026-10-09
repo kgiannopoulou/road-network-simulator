@@ -184,9 +184,10 @@ export class Junction {
         const drop = from.inLanes - to.outLanes;
         // Freeways add/drop lanes on the right (acceleration and exit lanes), streets on the left.
         const right = isFreeway(from.road.type) && isFreeway(to.road.type);
+        const turn = this.turnBetween(from, to); // a corner between two roads is still a turn
         for (let i = 0; i < from.inLanes; i++) {
           const target = right ? i - drop : i;
-          if (target >= 0 && target < to.outLanes) add(from, i, to, target, 'straight');
+          if (target >= 0 && target < to.outLanes) add(from, i, to, target, turn);
         }
       }
       return;
@@ -321,8 +322,15 @@ export class Junction {
    * Returns true to keep going, false to stop at the line.
    */
   request(driver, movement, dist, speed, time) {
-    if (this.occupants.has(driver)) return true;
     const arm = this.arms[movement.from];
+    if (this.occupants.has(driver)) {
+      // A reservation made on green lapses if the light changes before the
+      // car reaches the line and it can still stop comfortably.
+      const light = arm.rule === 'signal' ? this.signals.state(arm.index) : 'green';
+      const canStop = dist > m(1) && dist > (speed * speed) / (2 * COMFORT_BRAKE);
+      if (light === 'green' || !canStop) return true;
+      this.occupants.delete(driver);
+    }
     if (arm.rule === 'free') return true;
 
     let entry = this.waiting.get(driver);

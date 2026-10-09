@@ -9,6 +9,7 @@ import { CollisionWorld } from '../collision/collisionWorld.js';
 import { clamp } from '../math/utils.js';
 import { SensorSuite } from '../sensors/sensorSuite.js';
 import { City } from '../city/city.js';
+import { NavGraph } from '../navigation/navGraph.js';
 import { Point } from '../primitives/point.js';
 import { RoutePlanner } from '../traffic/routePlanner.js';
 import { TrafficManager } from '../traffic/trafficManager.js';
@@ -37,6 +38,8 @@ export class Simulation {
     this.sensors = new SensorSuite(this.player, this.world);
     this.cityEnabled = city; // Phase 6: junction rules, lights, signs, crossings
     this.city = null;
+    this.nav = null; // Phase 7: the navigable road graph
+    this.autonomy = null; // Phase 7: the autonomous driver of the player's car
     this.autopilot = null; // a Brain driving the player's car
     this.autopilotRoute = null; // Navigator for navigating brains
     this.routeRng = createRng(5);
@@ -78,6 +81,9 @@ export class Simulation {
     const { roads, borders } = this.network;
     this.world.setRoads(this.network.surfaces(), borders);
     this.city = this.cityEnabled && roads.length ? new City(this.network, this.network.graph) : null;
+    this.nav = this.city ? new NavGraph(this.city) : null;
+    this.stopAutonomy();
+    this.autonomy = null;
     this.traffic.setCity(this.city);
     this.traffic.setRoads(roads, [this.player]);
     this.builtVersion = this.network.builtVersion;
@@ -99,6 +105,21 @@ export class Simulation {
     rays.range = brain.sensor.range;
     this.autopilotRoute = null;
     if (brain.navigation) this.#planAutopilotRoute();
+  }
+
+  /** Phase 7: let an AutonomousDriver drive the player's car. */
+  startAutonomy(driver) {
+    this.stopAutonomy();
+    this.autonomy = driver;
+  }
+
+  stopAutonomy() {
+    if (this.autonomy?.status === 'driving') this.autonomy.stop();
+  }
+
+  /** The autonomous car's controls for this frame (null when it isn't driving). */
+  autonomyInput(dt) {
+    return this.autonomy?.status === 'driving' ? this.autonomy.update(this.time, dt, this.cars) : null;
   }
 
   disableAutopilot() {
@@ -238,6 +259,7 @@ export class Simulation {
   draw(ctx, { collisionDebug = false, trafficDebug = false, showSensors = false, showLanes = false, pixel = 1 } = {}) {
     this.city?.draw(ctx, pixel, { lanes: showLanes });
     this.skids.draw(ctx);
+    if (this.autonomy) this.autonomy.draw(ctx, pixel);
     if (this.autopilotRoute) {
       this.autopilotRoute.path.draw(ctx, { color: 'rgba(48, 209, 88, 0.55)', width: 2.5 * pixel, dash: [10 * pixel, 8 * pixel] });
     }

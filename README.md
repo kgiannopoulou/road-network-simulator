@@ -2,7 +2,7 @@
 
 A 2D road network simulator built from scratch with plain HTML, CSS and JavaScript ES modules on a single `<canvas>`. There is no framework, no bundler and no runtime dependencies.
 
-The repository currently holds six phases:
+The repository currently holds seven phases:
 
 - **Phase 1: simulator foundation.** The engine, a geometry library, an editable road graph, and procedural road generation with lanes, centre lines and direction arrows.
 - **Phase 2: cars.** A drivable car with a bicycle-model physics engine, SAT collision detection against road borders and other cars, and traffic vehicles that follow routes, keep their distance and get around obstacles.
@@ -10,11 +10,13 @@ The repository currently holds six phases:
 - **Phase 4: first self-driving AI.** A neural network written from scratch, connected to the car's sensors and controls, and trained by a genetic algorithm on populations of up to 500 cars.
 - **Phase 5: training system.** A detailed fitness function, a six-course curriculum, a training dashboard, and fast simulation up to "as fast as possible" in a Web Worker.
 - **Phase 6: city simulation.** Junctions with lane connections, turning lanes, yielding and occupancy. Traffic lights, stop and yield signs, speed limits and zebra crossings with pedestrians. Lane IDs, lane changes, overtaking and merging. A highway with ramps, exits and acceleration lanes.
+- **Phase 7: navigation.** A GPS road graph, A* and Dijkstra routing from two clicks, and an autonomous-driving stack: perception, behaviour planner, trajectory planner and controller. It drives the player's car from A to B through traffic.
 
 **Milestone #1 reached:** a manually drivable traffic simulator.
 **Milestone #2 reached:** cars learn basic road following.
 **Milestone #3 reached:** an actual AI-training environment.
 **Milestone #4 reached:** a small functioning city traffic simulation.
+**Milestone #5 reached:** the autonomous car can attempt (and complete) A → B navigation.
 
 ![The city](docs/screenshot-city.png)
 
@@ -47,6 +49,7 @@ npm test                      # unit tests (Node ≥ 22, built-in node:test, no 
 | 4. First self-driving AI | 13–16 | ✅ |
 | 5. Training system | 17–20 | ✅ |
 | 6. City simulation | 21–24 | ✅ |
+| 7. Navigation | 25–28 | ✅ |
 
 ## Phase 1: simulator foundation
 
@@ -536,6 +539,106 @@ The regression test runs 40 cars on the city for a minute with **zero collisions
 
 **Milestone #4: a small functioning city traffic simulation.**
 
+## Phase 7: navigation
+
+| Week | Goal | Status |
+| --- | --- | --- |
+| 25 | **GPS road graph:** the city as a navigable graph, lanes associated with graph edges | ✅ |
+| 26 | **Pathfinding:** Dijkstra and A*; click START and DESTINATION, get a route | ✅ |
+| 27 | **Behaviour planner:** route → "turn left" → behaviour → "move into the left lane" → controller → steering/throttle | ✅ |
+| 28 | **Trajectory planning:** short future paths, chosen on safety, speed and route requirements | ✅ |
+
+![Planning a route](docs/screenshot-nav-route.png)
+
+Press `5` (**Navigate**), click a road for **START** and another for **DESTINATION**. The route appears with turn-by-turn directions and the edges the search explored. **Drive autonomously** then hands the player's car to the autonomy stack.
+
+### Week 25: the GPS road graph (`navigation/navGraph.js`)
+
+- **Edges.** One edge per road and direction of travel, with length, speed limit, free-flow travel time, a street name (roads that continue each other straight form one street: *Avenue 1*, *Street 7*, *Highway 2*…) and the **IDs of its lanes** from the Phase 6 lane graph.
+- **Transitions** between edges come straight from the junctions' lane connections. Turn restrictions are therefore built into the graph: one-way streets, no U-turns, no hairpins, exits only from the right lane. Each transition records which lanes can make it and whether it is signal- or sign-controlled.
+- **Map matching.** `match(point, heading)` snaps a click or a GPS fix to an edge, a position along it and a lane, preferring the direction that agrees with the heading.
+
+### Week 26: pathfinding (`navigation/pathfinding.js`, `navigation/route.js`)
+
+- **Edge-based search.** The search runs over **edges**, not nodes, so turn restrictions and turn costs apply naturally. The route begins part-way along the start edge and ends part-way along the goal edge.
+  - **Dijkstra** expands in order of cost.
+  - **A\*** adds an admissible estimate: the straight-line distance (shortest), or that distance at the network's top speed (fastest).
+- **Two cost modes:**
+  - **Fastest:** travel time, plus expected waits (left turn 8 s, right 3 s, lights 10 s, stop/yield signs 5 s).
+  - **Shortest:** metres.
+- **Test result.** Over hundreds of random pairs A\* finds exactly Dijkstra's optimal cost while expanding ~30 % fewer edges. The difference grows with the size of the map. The panel shows both counts and draws A\*'s explored edges in orange.
+- **Route.** A `Route` adds what driving needs:
+  - a **lane plan**: on each edge, the lane that can make the next turn;
+  - the lane-level **reference path** (corners at least 5.5 m in radius, wider than the car's 4.7 m turning circle);
+  - **maneuvers** with their position along the path;
+  - **instructions** ("Turn right onto Street 7").
+
+### Week 27: behaviour planner (`autonomy/behaviorPlanner.js`)
+
+![Autonomous driving](docs/screenshot-nav-drive.png)
+
+```
+Route planner       "Turn right onto Street 7 in 320 m"
+      ↓
+Behaviour planner   "Move into the right lane" · "Red light: stopping"
+      ↓
+Trajectory planner  18/60 safe · chose "stop"
+      ↓
+Controller          steer 0 % · throttle 2 % · brake 0 %
+```
+
+Each frame the behaviour planner turns the route, the junction rules, crossings and the destination into a small decision: **allowed lanes, preferred lane, speed limit and stop point**.
+
+| State | When |
+| --- | --- |
+| Follow route | cruising (keep right when nothing else matters) |
+| Prepare lane change | the next turn needs another lane within 160 m: "Move into the left lane" |
+| Approach / Cross junction | its movement is granted |
+| Stop at line / Wait at line | red or yellow light, stop sign, yield, busy box, or wrong lane |
+| Yield to pedestrians | someone is on the crossing ahead |
+| Arriving / Arrived | the last 60 m, then stopped at the destination |
+
+- **Same rules as traffic.** The autonomous car asks junctions for its movement through the **same reservation system traffic uses**, as a real car could receive signal phases over V2I. Traffic respects it, and it respects traffic.
+- **Turns.** Within ~20 m of a turn it follows the reference lane exactly.
+
+### Week 28: trajectory planning (`autonomy/trajectoryPlanner.js`, `polynomials.js`, `controller.js`)
+
+- **Frenet frame.** Every 0.1 s the planner works in **Frenet coordinates** along the reference path (`s` along it, `d` sideways) and generates a small lattice of candidates over 3–5 s:
+  - **Lateral:** a quintic (minimum-jerk) `d(t)` to the centre of each allowed lane.
+  - **Longitudinal:**
+    - a quartic `s(t)` to a target speed (the limit, slower, the speed of the car ahead), with a duration long enough to stay within comfortable acceleration;
+    - a quartic that slows to a corner's speed exactly by the corner;
+    - a quintic that **stops exactly** at a point: a stop line, the destination, or behind a car.
+- **Rejected** if it accelerates or brakes too hard, is too fast for the curve at that point, turns harder than the tyres allow, leaves the allowed lanes (the whole car body, not just its centre), runs the stop point, or comes within a car's width of a perceived object's predicted position (constant-velocity prediction, three-circle footprints).
+- **Ranked by cost:** shortfall against a desired speed profile (the limit, braking for corners ahead), jerk, distance from the preferred lane, lane changes, proximity to other cars, and unnecessary stops.
+- **When nothing is safe:** take the option whose predicted conflict is furthest away (≥ 1.5 s), otherwise brake hard.
+- **Controller.** Steers along the *dense* reference path offset by the planned `d` (Stanley with curvature feed-forward). Throttle and brake track the planned speed with its acceleration as feed-forward.
+- **Perception (`autonomy/perception.js`).** Built only from the car's Phase 3 sensors:
+  - LiDAR returns that hit vehicles are clustered;
+  - radar targets are added;
+  - an alpha-beta filter tracks each object and estimates its velocity.
+
+  Localisation uses the true pose, as an HD-map localiser would provide (GPS is available as an option). A *ground truth* perception mode is there for comparison.
+
+### Milestone #5 and what it took
+
+The unit tests drive two routes across the city, one of them with 20 traffic cars, and require arrival with **zero collisions and zero red lights**. A wider sweep of 36 random routes (350 m to 2.2 km, with and without 20–30 traffic cars) arrives 36/36 with zero collisions and zero red lights.
+
+Getting there exposed one bug after another:
+
+| Problem | Fix |
+| --- | --- |
+| Starting from rest, the plan's first moments are near zero speed, so the controller "held" the car forever | Look further ahead at low speed; brake-hold only if the plan barely moves for 3 s |
+| Stop curves stretched over 9 s crawled the last metres | Stop durations scale with distance and speed |
+| Fast candidates were "too fast" at the next corner, so only crawling ones survived | Speed checked against each point's own corner speed; corner-speed candidates; cost against a speed profile |
+| Re-planning from the measured offset baked tracking errors into every plan; in tight arcs the car drifted onto the kerb | Continue laterally from the previous plan when close; through turns plan exactly along the reference lane |
+| 4.5 m corner arcs were tighter than the car can steer | 5.5 m minimum radius for routes |
+| A follower predicted to run into the car made every candidate "collide", the car braked hard and was rear-ended | Ignore objects behind in the same lane; least-bad fallback instead of emergency braking |
+| Reservations made on green let cars (and traffic) through a red that came before they reached the line | A reservation lapses when the light changes and the car can still stop |
+| The red-light counter flagged cars turning across another approach's line inside the box | Count only cars driving along that approach |
+| Perceived velocities oscillated ±4 m/s as the LiDAR sweep jittered cluster centres, so a cut-in was seen too late | Lower tracking gains; with the fix the cut-in scenario that collided now passes |
+| A traffic lane change could cut in front of the player at low speed | Traffic leaves followers 2 m + 0.8 s |
+
 ## Controls
 
 | Input | Action |
@@ -544,7 +647,7 @@ The regression test runs 40 cars on the city for a minute with **zero collisions
 | Mouse wheel | Zoom at cursor |
 | Middle drag, or `Space` + drag | Pan |
 | `F` / `0` | Fit network / reset view |
-| `1` / `2` / `3` / `4` | Graph / Roads / Drive / Train mode |
+| `1` / `2` / `3` / `4` / `5` | Graph / Roads / Drive / Train / Navigate mode |
 
 **Graph mode**
 
@@ -615,18 +718,22 @@ src/
   sensors/              sensor.js (common API) · raycast.js · raySensor.js · lidar.js · radar.js · gps.js · imu.js
                         imperfections.js · noise.js · sensorSuite.js
   city/                 city.js (junctions, lane graph, violations, drawing) · junction.js · signals.js · crossings.js
+  navigation/           navGraph.js (GPS graph, map matching) · pathfinding.js (A*, Dijkstra) · route.js
+  autonomy/             perception.js · behaviorPlanner.js · trajectoryPlanner.js · polynomials.js · controller.js
+                        autonomousDriver.js
   sim/simulation.js     cars, substepping, collisions, city, traffic, sensors, debug drawing
   ai/                   network.js · activations.js · brain.js · genetics.js · trainer.js · coverage.js · championStore.js
   training/             courses.js · trainingWorld.js · navigator.js · fitness.js · environments.js · session.js
                         speed.js · runner.js · worker.js · trainingView.js
   ui/                   controls.js · hud.js · sensorPanel.js · trainingDashboard.js · lineChart.js · networkView.js
+                        navigationPanel.js
   data/                 city.js (Phase 6 city) · demo.js (classic sample network)
 tests/
-  unit/                 node:test suites: geometry, graph, roads, car physics, collisions, traffic, sensors, AI, training, city
+  unit/                 node:test suites: geometry, graph, roads, car physics, collisions, traffic, sensors, AI, training, city, navigation
   visual/               interactive geometry test gallery
 ```
 
-Every module under `math/`, `primitives/`, `graph/graph.js`, `road/`, `car/`, `collision/`, `traffic/`, `sensors/`, `ai/`, `training/` (except the worker glue), `city/` and `sim/` is DOM-free. The unit tests run them directly in Node, and later phases can reuse them in workers.
+Every module under `math/`, `primitives/`, `graph/graph.js`, `road/`, `car/`, `collision/`, `traffic/`, `sensors/`, `ai/`, `training/` (except the worker glue), `city/`, `navigation/`, `autonomy/` and `sim/` is DOM-free. The unit tests run them directly in Node, and later phases can reuse them in workers.
 
 ## Design notes
 
@@ -636,6 +743,7 @@ Every module under `math/`, `primitives/`, `graph/graph.js`, `road/`, `car/`, `c
 - **One input interface for every driver.** The keyboard, traffic drivers and (later) AI all just set `car.input`. Physics doesn't know who is driving.
 - **Decide once per frame, integrate in substeps.** Drivers choose their inputs once per frame. Physics and collision resolution run in as many substeps as the fastest car needs.
 - **Deterministic traffic.** Routes, spawns and vehicle variety come from a seeded RNG, so the regression tests replay exactly.
+- **Layers talk only to their neighbours.** Route, behaviour, trajectory and controller each hand the next layer a small, inspectable object, which is what the navigation panel shows live.
 - **One session, two hosts.** Training only talks to the page through plain-data snapshots, so the main thread and a Web Worker run exactly the same code.
 - **Evolution needs determinism.** With a fixed seed and no sensor noise, a brain gets exactly the same score every time it drives. That is what makes elitism meaningful.
 - **Ground truth and perception stay separate.** Sensors read the simulation's true state, but everything downstream gets only delivered sensor readings. The next phases can't cheat by peeking at the world.

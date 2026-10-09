@@ -18,6 +18,7 @@
         <button data-mode="road" title="Configure lanes and direction (2)">Roads <kbd>2</kbd></button>
         <button data-mode="drive" title="Drive the car with the keyboard (3)">Drive <kbd>3</kbd></button>
         <button data-mode="train" title="Train self-driving cars with a genetic algorithm (4)">Train <kbd>4</kbd></button>
+        <button data-mode="navigate" title="Plan a route and let the autonomous car drive it (5)">Navigate <kbd>5</kbd></button>
       </div>
 
       <div class="group" aria-label="Simulation">
@@ -256,6 +257,48 @@
     </aside>
     <div class="render-off" data-render-off hidden>Rendering is off; training continues (Z to turn it back on)</div>
 
+    <aside id="navigation-panel" class="panel training-panel navigation-panel" hidden>
+      <h2>Navigation <span class="sub">route → behaviour → trajectory → controls</span></h2>
+      <p class="train-status" data-nav-status></p>
+      <div class="row">
+        <span>Search</span>
+        <select data-nav="algorithm">
+          <option value="astar">A*</option>
+          <option value="dijkstra">Dijkstra</option>
+        </select>
+        <select data-nav="mode">
+          <option value="fastest">Fastest</option>
+          <option value="shortest">Shortest</option>
+        </select>
+      </div>
+      <div class="row">
+        <span>Perception</span>
+        <select data-nav="perception">
+          <option value="sensors">LiDAR + radar</option>
+          <option value="groundTruth">Ground truth</option>
+        </select>
+      </div>
+      <label class="row"><input type="checkbox" data-nav="fromCar" /> Start from my car</label>
+      <div class="nav-summary" data-nav-summary></div>
+      <ol class="nav-steps" data-nav-steps></ol>
+      <div class="row">
+        <button data-nav-action="go">Drive autonomously</button>
+        <button data-nav-action="stop">Stop</button>
+        <button data-nav-action="clear" class="danger">Clear</button>
+      </div>
+      <div class="nav-live" data-nav-live hidden>
+        <div class="progress"><i data-nav-progress></i></div>
+        <dl>
+          <dt>Route</dt><dd data-layer="route"></dd>
+          <dt>Behaviour</dt><dd data-layer="behavior"></dd>
+          <dt>Trajectory</dt><dd data-layer="trajectory"></dd>
+          <dt>Controls</dt><dd data-layer="controller"></dd>
+          <dt>Perception</dt><dd data-layer="perception"></dd>
+        </dl>
+        <p class="nav-result" data-nav-result></p>
+      </div>
+    </aside>
+
     <aside id="help" class="panel help" hidden>
       <h2>Controls</h2>
       <h3>Camera</h3>
@@ -298,6 +341,12 @@
         <li>Pick a course (or the whole curriculum) and press Start</li>
         <li><kbd>[</kbd>/<kbd>]</kbd> slower / faster · <kbd>Z</kbd> rendering on/off · <kbd>P</kbd> pause</li>
         <li><kbd>K</kbd> (drive mode) autopilot: the champion drives your car</li>
+      </ul>
+      <h3>Navigate mode <kbd>5</kbd></h3>
+      <ul>
+        <li>Click a road for START, another for DESTINATION</li>
+        <li>Choose A* / Dijkstra and fastest / shortest</li>
+        <li>Drive autonomously: watch each layer decide</li>
       </ul>
       <h3>Sensors</h3>
       <ul>

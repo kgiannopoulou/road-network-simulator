@@ -17,6 +17,7 @@ import { Hud } from './ui/hud.js';
 import { SensorPanel } from './ui/sensorPanel.js';
 import { TrainingDashboard } from './ui/trainingDashboard.js';
 import { TrainingView } from './training/trainingView.js';
+import { NavigationPanel } from './ui/navigationPanel.js';
 import { Brain } from './ai/brain.js';
 
 const PAN_SPEED = 700; // screen pixels per second
@@ -45,6 +46,7 @@ const dashboard = new TrainingDashboard(document.getElementById('training-panel'
   onAutopilot: () => toggleAutopilot(),
 });
 const trainingView = new TrainingView();
+const navPanel = new NavigationPanel(document.getElementById('navigation-panel'), sim);
 const renderOff = document.querySelector('[data-render-off]');
 
 const view = { showGrid: true, showGraph: true, debugGeometry: false, collisionDebug: false, trafficDebug: false, showLanes: false };
@@ -110,6 +112,8 @@ function resize() {
 
 const driving = () => editor.mode === EditorMode.DRIVE;
 const training = () => editor.mode === EditorMode.TRAIN;
+const navigating = () => editor.mode === EditorMode.NAVIGATE;
+const autonomous = () => sim.autonomy?.status === 'driving';
 
 /**
  * Autopilot: the champion (or, with none trained yet, a random and
@@ -134,6 +138,7 @@ function handleShortcuts() {
   if (k('Digit2')) editor.setMode(EditorMode.ROAD);
   if (k('Digit3')) editor.setMode(EditorMode.DRIVE);
   if (k('Digit4')) editor.setMode(EditorMode.TRAIN);
+  if (k('Digit5')) editor.setMode(EditorMode.NAVIGATE);
   if (k('KeyK')) toggleAutopilot();
   if (k('KeyG')) {
     if (input.shift) view.showGrid = !view.showGrid;
@@ -173,7 +178,7 @@ function handleShortcuts() {
 function updateCamera(dt, rawDelta) {
   const spaceHeld = !driving() && input.isDown('Space');
 
-  if (driving() || training()) {
+  if (driving() || training() || (navigating() && autonomous())) {
     // Follow the car (or the training leader), looking a little ahead of it.
     // Uses real time so the camera still moves while the simulation is paused.
     const leader = training() ? trainingView.leaderPosition(dashboard.snapshot) : null;
@@ -240,23 +245,33 @@ function update(dt, rawDelta) {
   editor.update(panning || spaceHeld);
   network.update();
   // Re-plan traffic once a graph edit is finished (not on every drag frame).
-  if (sim.needsSync() && !editor.dragging) sim.syncRoads();
+  if (sim.needsSync() && !editor.dragging) {
+    sim.syncRoads();
+    navPanel.reset(); // routes refer to the old road graph
+  }
   if (training()) {
     dashboard.update(rawDelta);
     // The main map keeps running underneath (traffic, your parked car).
     sim.update(dt, NO_INPUT);
   } else {
-    const input = driving() ? (sim.autopilot ? sim.autopilotInput() : keyboard.read()) : NO_INPUT;
-    sim.update(dt, input);
+    // Navigate mode: clicks set START and DESTINATION.
+    if (navigating() && !panning && !spaceHeld && input.mouse.inside && input.wasMousePressed(MouseButton.LEFT)) {
+      navPanel.click(camera.screenToWorld(input.mouse.position));
+    }
+    const auto = sim.autonomyInput(dt);
+    const manual = driving() ? (sim.autopilot ? sim.autopilotInput() : keyboard.read()) : NO_INPUT;
+    sim.update(dt, auto ?? manual);
   }
   autosave(rawDelta);
   controls.sync();
   hud.update(sim, rawDelta, driving());
   sensorPanel.update(rawDelta);
   dashboard.show(training());
+  navPanel.show(navigating());
+  navPanel.update(rawDelta);
   renderOff.hidden = !(training() && !dashboard.render && dashboard.running);
   document.body.classList.toggle('driving', driving());
-  document.body.classList.toggle('training', training());
+  document.body.classList.toggle('training', training() || navigating());
 
   const mouseWorld = editor.mouse;
   const stats = network.stats();
@@ -309,6 +324,7 @@ function render() {
     showLanes: view.showLanes,
     pixel: 1 / camera.zoom,
   });
+  if (navigating()) navPanel.draw(ctx, 1 / camera.zoom);
   editor.draw(ctx, { showGraph: view.showGraph });
 }
 

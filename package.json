@@ -1,7 +1,7 @@
 {
   "name": "road-network-simulator",
-  "version": "0.24.0",
-  "description": "A 2D city traffic simulator built from scratch on HTML Canvas: geometry library, road graph editor, procedural roads, drivable car physics, collisions, traffic vehicles, simulated sensors and self-driving cars trained by a neural network + genetic algorithm in a curriculum-based training environment.",
+  "version": "0.28.0",
+  "description": "A 2D city traffic simulator built from scratch on HTML Canvas: geometry library, road graph editor, procedural roads, drivable car physics, collisions, traffic vehicles, simulated sensors and self-driving cars trained by a neural network + genetic algorithm in a curriculum-based training environment, plus routing (A*, Dijkstra) and a layered autonomous-driving stack.",
   "type": "module",
   "private": true,
   "scripts": {

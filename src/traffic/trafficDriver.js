@@ -401,7 +401,9 @@ export class TrafficDriver {
 
     let movement = this.city.movement(step, this.lane, next);
     if (!movement && dist < m(12) && this.pendingLane === null && this.#reroute()) {
-      movement = this.city.movement(this.steps[k], this.lane, this.steps[k + 1]);
+      // The route was re-planned from the current step, so look it up afresh.
+      const i = this.stepIndex;
+      movement = this.steps[i + 1] ? this.city.movement(this.steps[i], this.lane, this.steps[i + 1]) : null;
     }
     // Still in the wrong lane: wait at the line while lane changing keeps trying.
     if (!movement) return dist < m(12) ? { gap: dist - m(0.5), kind: 'lane' } : null;
@@ -607,8 +609,9 @@ export class TrafficDriver {
       const { leader, follower } = this.laneIndex.neighbours(info.road, info.dir, lane, info.s, this.car);
       if (leader && leader.gap < (m(2) + v * 0.3) * strictness) return false;
       if (follower) {
-        if (follower.gap < m(2) * strictness) return false;
         const fv = Math.max(0, follower.car.speed);
+        // Don't cut in: leave the car behind at least 2 m plus 0.8 s at its speed.
+        if (follower.gap < (m(2) + fv * 0.8) * strictness) return false;
         const brake = idmAcceleration({ v: fv, v0: Math.max(fv, m(5)), gap: follower.gap, dv: fv - v, a: o.maxAccel, b: o.comfortBrake, s0: o.minGap, T: o.timeHeadway });
         if (brake < -o.safeBrake / strictness) return false;
       }

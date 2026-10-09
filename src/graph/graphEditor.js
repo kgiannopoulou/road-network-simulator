@@ -3,7 +3,7 @@ import { snap } from '../math/utils.js';
 import { Point } from '../primitives/point.js';
 import { Segment } from '../primitives/segment.js';
 
-export const EditorMode = { GRAPH: 'graph', ROAD: 'road', DRIVE: 'drive', TRAIN: 'train' };
+export const EditorMode = { GRAPH: 'graph', ROAD: 'road', DRIVE: 'drive', TRAIN: 'train', NAVIGATE: 'navigate' };
 
 export const LANE_LIMITS = { min: 1, max: 6 };
 
@@ -64,8 +64,8 @@ export class GraphEditor {
     this.#dropStaleReferences();
 
     this.mouse = camera.screenToWorld(input.mouse.position);
-    if (this.mode === EditorMode.DRIVE || this.mode === EditorMode.TRAIN) {
-      // Driving or training: the mouse doesn't edit anything.
+    if (this.mode === EditorMode.DRIVE || this.mode === EditorMode.TRAIN || this.mode === EditorMode.NAVIGATE) {
+      // Driving, training or navigating: the mouse doesn't edit anything.
       this.hovered = null;
       this.hoveredSegment = null;
       return;
@@ -231,7 +231,7 @@ export class GraphEditor {
 
   draw(ctx, { showGraph = true } = {}) {
     const px = 1 / this.camera.zoom;
-    if (this.mode === EditorMode.DRIVE || this.mode === EditorMode.TRAIN) return;
+    if (this.mode === EditorMode.DRIVE || this.mode === EditorMode.TRAIN || this.mode === EditorMode.NAVIGATE) return;
     if (this.mode === EditorMode.GRAPH) this.#drawGraphMode(ctx, px, showGraph);
     else this.#drawRoadMode(ctx, px, showGraph);
   }

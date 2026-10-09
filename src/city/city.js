@@ -153,7 +153,9 @@ export class City {
       if (!j.signals || j.node.distanceTo(pos) > m(40)) continue;
       for (const arm of j.arms) {
         if (!arm.inLanes || j.signals.state(arm.index) !== 'red') continue;
-        if (heading.dot(arm.away) > -0.4) continue; // not driving towards the junction
+        // Only a car driving along this approach towards the junction (not one
+        // sweeping across its line while turning inside the box) runs this light.
+        if (heading.dot(arm.away) > -0.8) continue;
         const line = j.stopLine(arm);
         const half = (arm.inLanes * line.laneWidth) / 2;
         const mid = line.offsets.reduce((a, b) => a + b, 0) / line.offsets.length;
@@ -161,7 +163,7 @@ export class City {
         const r = new Point(line.right.x, line.right.y).scale(half);
         if (getIntersection(prev, pos, c.subtract(r), c.add(r))) {
           this.violations.redLights++;
-          this.violations.events.push({ type: 'red light', time: this.time });
+          this.violations.events.push({ type: 'red light', time: this.time, junction: j.index, arm: arm.index, heading: heading.angle(), away: arm.away.angle(), at: { x: pos.x, y: pos.y } });
         }
       }
     }
