@@ -1,4 +1,6 @@
 import { Trainer } from '../ai/trainer.js';
+import { createRng } from '../math/random.js';
+import { Navigator, planRouteFrom } from '../training/navigator.js';
 import { Car } from '../car/car.js';
 import { NO_INPUT, PhysicsModel, SURFACES } from '../car/physics.js';
 import { SkidMarks } from '../car/skidMarks.js';
@@ -32,8 +34,9 @@ export class Simulation {
     this.player = new Car({ kind: 'player', color: '#ffd54a' });
     this.skids = new SkidMarks();
     this.sensors = new SensorSuite(this.player, this.world);
-    this.trainer = null; // population training (Phase 4)
     this.autopilot = null; // a Brain driving the player's car
+    this.autopilotRoute = null; // Navigator for navigating brains
+    this.routeRng = createRng(5);
 
     this.model = PhysicsModel.REALISTIC;
     this.weather = 'dry';
@@ -70,56 +73,60 @@ export class Simulation {
   syncRoads() {
     const first = this.builtVersion === -1;
     const { roads, borders } = this.network;
-    this.world.setRoads(
-      roads.map((r) => r.poly),
-      borders,
-    );
+    this.world.setRoads(this.network.surfaces(), borders);
     this.traffic.setRoads(roads, [this.player]);
     this.builtVersion = this.network.builtVersion;
     if (first) this.resetPlayer();
-    // The road network changed under a training run: restart it on the new
-    // roads, keeping its settings and champion.
-    if (this.trainer) {
-      const { spawn, ...options } = this.trainer.options;
-      this.startTraining({ ...options, champion: this.trainer.champion });
-    }
   }
 
-  // ---- AI (Phase 4) ---------------------------------------------------------
+  // ---- autopilot (Phases 4–5) -------------------------------------------------
 
-  startTraining(options = {}) {
-    if (this.network.roads.length === 0) return null;
-    this.trainer = new Trainer(this.network.roads, this.world, options);
-    this.trainer.start();
-    return this.trainer;
-  }
-
-  stopTraining() {
-    this.trainer = null;
-  }
-
-  /** Advance training by dt; agents can crash into traffic. */
-  updateTraining(dt) {
-    if (!this.trainer || this.paused || dt <= 0) return;
-    this.trainer.update(dt, { obstacles: this.traffic.cars, surface: this.roadSurface, model: this.model });
-  }
-
-  /** Let a brain drive the player's car. Its ray sensor is set to the layout the brain was trained with. */
+  /**
+   * Let a brain drive the player's car. Its ray sensor is set to the layout
+   * the brain was trained with. A navigating brain (Phase 5) also gets a
+   * random route from where the car is, followed using the GPS reading.
+   */
   enableAutopilot(brain) {
     this.autopilot = brain;
     const rays = this.sensors.get('rays');
     rays.rayCount = brain.sensor.rayCount;
     rays.spread = brain.sensor.spread;
     rays.range = brain.sensor.range;
+    this.autopilotRoute = null;
+    if (brain.navigation) this.#planAutopilotRoute();
   }
 
   disableAutopilot() {
     this.autopilot = null;
+    this.autopilotRoute = null;
   }
 
-  /** Controls chosen by the autopilot from the latest delivered ray reading. */
+  #planAutopilotRoute() {
+    const planner = this.traffic.planner;
+    if (!planner) return;
+    const s = this.player.state;
+    const steps = planRouteFrom(planner, this.network.roads, { x: s.x, y: s.y, angle: s.angle }, this.routeRng, 14);
+    if (!steps) return;
+    this.autopilotRoute = Navigator.forRoute(planner, steps);
+    this.autopilotRoute.update(this.player.position, s.angle);
+  }
+
+  /** Controls chosen by the autopilot from the latest delivered readings. */
   autopilotInput() {
-    return this.autopilot.drive(this.sensors.read('rays'), this.player);
+    let navigation = null;
+    const route = this.autopilotRoute;
+    if (route) {
+      // Localise with the GPS fix (metres) when there is one; heading from
+      // GPS course over ground, else the last known heading.
+      const gps = this.sensors.read('gps');
+      const s = this.player.state;
+      const position = gps ? new Point(m(gps.data.x), m(gps.data.y)) : this.player.position;
+      if (gps?.data.heading !== null && gps?.data.heading !== undefined) this.lastHeading = gps.data.heading;
+      route.update(position, this.lastHeading ?? s.angle);
+      if (route.remaining < m(25)) this.#planAutopilotRoute();
+      navigation = this.autopilotRoute?.inputs() ?? null;
+    }
+    return this.autopilot.drive(this.sensors.read('rays'), this.player, navigation);
   }
 
   /**
@@ -224,9 +231,8 @@ export class Simulation {
 
   draw(ctx, { collisionDebug = false, trafficDebug = false, showSensors = false, training = false, pixel = 1 } = {}) {
     this.skids.draw(ctx);
-    if (training && this.trainer) {
-      this.trainer.drawSpawn(ctx, pixel);
-      this.trainer.draw(ctx, pixel);
+    if (this.autopilotRoute) {
+      this.autopilotRoute.path.draw(ctx, { color: 'rgba(48, 209, 88, 0.55)', width: 2.5 * pixel, dash: [10 * pixel, 8 * pixel] });
     }
     if (trafficDebug) this.#drawTrafficDebug(ctx, pixel);
     for (const car of this.cars) {

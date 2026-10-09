@@ -2,6 +2,7 @@ import { KeyboardControls } from './car/keyboardControls.js';
 import { NO_INPUT } from './car/physics.js';
 import { toKmh } from './car/units.js';
 import { Camera } from './engine/camera.js';
+import { Point } from './primitives/point.js';
 import { DebugOverlay, drawGrid, FpsCounter } from './engine/debug.js';
 import { Input, MouseButton } from './engine/input.js';
 import { GameLoop } from './engine/loop.js';
@@ -13,7 +14,8 @@ import { Simulation } from './sim/simulation.js';
 import { Controls } from './ui/controls.js';
 import { Hud } from './ui/hud.js';
 import { SensorPanel } from './ui/sensorPanel.js';
-import { TrainingPanel } from './ui/trainingPanel.js';
+import { TrainingDashboard } from './ui/trainingDashboard.js';
+import { TrainingView } from './training/trainingView.js';
 import { Brain } from './ai/brain.js';
 
 const PAN_SPEED = 700; // screen pixels per second
@@ -35,7 +37,12 @@ const overlay = new DebugOverlay(document.getElementById('debug'));
 const hud = new Hud(document.getElementById('car-panel'));
 const sensorPanel = new SensorPanel(document.getElementById('sensor-panel'), sim.sensors);
 const PRESET_CYCLE = ['perfect', 'realistic', 'degraded'];
-const trainingPanel = new TrainingPanel(document.getElementById('training-panel'), sim, { onAutopilot: () => toggleAutopilot() });
+const dashboard = new TrainingDashboard(document.getElementById('training-panel'), {
+  getMap: () => graph.toJSON(),
+  onAutopilot: () => toggleAutopilot(),
+});
+const trainingView = new TrainingView();
+const renderOff = document.querySelector('[data-render-off]');
 
 const view = { showGrid: true, showGraph: true, debugGeometry: false, collisionDebug: false, trafficDebug: false };
 let pixelRatio = 1;
@@ -108,7 +115,7 @@ function toggleAutopilot() {
     sim.disableAutopilot();
     return;
   }
-  const champion = trainingPanel.champion;
+  const champion = dashboard.champion;
   sim.enableAutopilot(champion ? Brain.fromJSON(champion.brain) : new Brain());
   sensorPanel.syncConfig();
   editor.setMode(EditorMode.DRIVE);
@@ -136,14 +143,19 @@ function handleShortcuts() {
 
   // Simulation.
   if (k('KeyT')) sim.setTrafficEnabled(!sim.trafficEnabled);
-  if (k('BracketLeft')) sim.setTrafficCount(sim.savedTrafficCount - 2);
-  if (k('BracketRight')) sim.setTrafficCount(sim.savedTrafficCount + 2);
+  // [ / ] change traffic, or the training speed in Train mode.
+  if (k('BracketLeft')) training() ? dashboard.cycleSpeed(-1) : sim.setTrafficCount(sim.savedTrafficCount - 2);
+  if (k('BracketRight')) training() ? dashboard.cycleSpeed(1) : sim.setTrafficCount(sim.savedTrafficCount + 2);
   if (k('KeyM')) sim.toggleModel();
   if (k('KeyY')) sim.cycleWeather();
   if (k('KeyC')) view.collisionDebug = !view.collisionDebug;
   if (k('KeyX')) view.trafficDebug = !view.trafficDebug;
   if (k('KeyN')) sim.ghost = !sim.ghost;
-  if (k('KeyP')) sim.paused = !sim.paused;
+  if (k('KeyP')) {
+    if (training() && dashboard.running) dashboard.setPaused(!dashboard.runner.paused);
+    else sim.paused = !sim.paused;
+  }
+  if (k('KeyZ') && training()) dashboard.toggleRender();
   if (driving() && k('KeyR')) sim.resetPlayer();
   if (k('KeyI')) sensorPanel.toggle();
   if (k('KeyU')) {
@@ -158,8 +170,9 @@ function updateCamera(dt, rawDelta) {
   if (driving() || training()) {
     // Follow the car (or the training leader), looking a little ahead of it.
     // Uses real time so the camera still moves while the simulation is paused.
-    const car = (training() && sim.trainer?.leader?.car) || sim.player;
-    const target = car.position.add(car.velocity.scale(0.35));
+    const leader = training() ? trainingView.leaderPosition(dashboard.snapshot) : null;
+    const car = sim.player;
+    const target = leader ? new Point(leader.x, leader.y) : car.position.add(car.velocity.scale(0.35));
     const t = 1 - Math.exp(-FOLLOW_STIFFNESS * rawDelta);
     camera.center = camera.center.add(target.subtract(camera.center).scale(t));
   } else {
@@ -222,12 +235,10 @@ function update(dt, rawDelta) {
   network.update();
   // Re-plan traffic once a graph edit is finished (not on every drag frame).
   if (sim.needsSync() && !editor.dragging) sim.syncRoads();
-  if (training() && sim.trainer) {
-    // Fast-forward: several simulation steps per rendered frame.
-    for (let i = 0; i < trainingPanel.speed; i++) {
-      sim.update(dt, NO_INPUT);
-      sim.updateTraining(dt);
-    }
+  if (training()) {
+    dashboard.update(rawDelta);
+    // The main map keeps running underneath (traffic, your parked car).
+    sim.update(dt, NO_INPUT);
   } else {
     const input = driving() ? (sim.autopilot ? sim.autopilotInput() : keyboard.read()) : NO_INPUT;
     sim.update(dt, input);
@@ -236,8 +247,8 @@ function update(dt, rawDelta) {
   controls.sync();
   hud.update(sim, rawDelta, driving());
   sensorPanel.update(rawDelta);
-  trainingPanel.show(training());
-  trainingPanel.update(rawDelta);
+  dashboard.show(training());
+  renderOff.hidden = !(training() && !dashboard.render && dashboard.running);
   document.body.classList.toggle('driving', driving());
   document.body.classList.toggle('training', training());
 
@@ -255,7 +266,8 @@ function update(dt, rawDelta) {
   overlay.set('Car', `${car.x.toFixed(0)}, ${car.y.toFixed(0)}  ${toKmh(car.speed).toFixed(0)} km/h`);
   overlay.set('Traffic', `${sim.traffic.cars.length} vehicles`);
   overlay.set('Sensors', `${sim.sensors.preset} · ${sim.sensors.sensors.filter((s) => s.status === 'ok').length}/${sim.sensors.sensors.length} ok`);
-  if (sim.trainer) overlay.set('Training', `gen ${sim.trainer.generation} · ${sim.trainer.alive.length}/${sim.trainer.agents.length} alive · champion ${(sim.trainer.champion?.fitness ?? 0).toFixed(0)} m`);
+  if (!dashboard.snapshot) overlay.values.delete('Training');
+  else overlay.set('Training', `gen ${dashboard.snapshot.stats.generation} · ${dashboard.snapshot.course} · ${Math.round(dashboard.runner.stepsPerSecond)} steps/s`);
   overlay.set('Sim', `${sim.stepMs.toFixed(2)} ms, ${sim.substeps} substep${sim.substeps > 1 ? 's' : ''}${sim.paused ? ' (paused)' : ''}`);
   overlay.update(rawDelta);
 
@@ -269,14 +281,21 @@ function render() {
   ctx.fillStyle = '#1d2a22';
   ctx.fillRect(0, 0, camera.viewport.width, camera.viewport.height);
 
+  const snapshot = training() ? dashboard.snapshot : null;
+  if (training() && !dashboard.render && dashboard.running) return; // Week 20: rendering off
+
   camera.apply(ctx, pixelRatio);
   if (view.showGrid) drawGrid(ctx, camera);
+  if (snapshot) {
+    // Training: draw the course from the latest snapshot instead of the map.
+    trainingView.draw(ctx, snapshot, dashboard.runner.config, 1 / camera.zoom);
+    return;
+  }
   network.draw(ctx, { debug: view.debugGeometry });
   sim.draw(ctx, {
     collisionDebug: view.collisionDebug,
     trafficDebug: view.trafficDebug,
     showSensors: sensorPanel.visible,
-    training: training(),
     pixel: 1 / camera.zoom,
   });
   editor.draw(ctx, { showGraph: view.showGraph });

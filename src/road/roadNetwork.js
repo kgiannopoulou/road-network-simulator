@@ -1,4 +1,4 @@
-import { boxesOverlap, getIntersection, getLineIntersection } from '../math/utils.js';
+import { boxesOverlap, degToRad, getIntersection, getLineIntersection } from '../math/utils.js';
 import { Matrix } from '../math/matrix.js';
 import { Point } from '../primitives/point.js';
 import { Polygon } from '../primitives/polygon.js';
@@ -18,6 +18,7 @@ export const ROAD_DEFAULTS = {
   centerGap: 1.8,
   arrowColor: 'rgba(255, 255, 255, 0.5)',
   arrowSpacing: 240,
+  kerbRadius: 2.5, // junction corner rounding (tangent length), in lane widths; 0 = sharp corners
 };
 
 // Lane arrow pointing along +x, centred on the origin, sized for a 22-unit lane.
@@ -66,7 +67,6 @@ export class RoadNetwork {
     const { laneWidth, roundness } = this.options;
 
     this.roads = this.graph.segments.map((s) => new Road(s, { laneWidth, roundness }));
-    this.borders = Polygon.union(this.roads.map((r) => r.poly));
 
     const roadsAtNode = new Map();
     for (const road of this.roads) {
@@ -75,10 +75,17 @@ export class RoadNetwork {
         roadsAtNode.get(p).push(road);
       }
     }
+    this.fillets = buildKerbFillets(roadsAtNode, this.options.kerbRadius * laneWidth);
+    this.borders = Polygon.union([...this.roads.map((r) => r.poly), ...this.fillets]);
     for (const road of this.roads) this.#buildMarkings(road, roadsAtNode);
 
     this.builtVersion = this.graph.version;
     this.buildMs = performance.now() - start;
+  }
+
+  /** Every drivable polygon: road envelopes plus junction kerb fillets. */
+  surfaces() {
+    return [...this.roads.map((r) => r.poly), ...this.fillets];
   }
 
   stats() {
@@ -174,8 +181,8 @@ export class RoadNetwork {
   draw(ctx, { debug = false } = {}) {
     const o = this.options;
 
-    for (const road of this.roads) {
-      road.poly.draw(ctx, { fill: o.surfaceColor, stroke: o.surfaceColor, lineWidth: 1, join: 'round' });
+    for (const poly of this.surfaces()) {
+      poly.draw(ctx, { fill: o.surfaceColor, stroke: o.surfaceColor, lineWidth: 1, join: 'round' });
     }
 
     for (const road of this.roads) {
@@ -241,4 +248,70 @@ export function clipOutside(seg, polys) {
     else kept.push({ start: a, end: b });
   }
   return kept.map(({ start, end }) => new Segment(seg.pointAt(start), seg.pointAt(end)));
+}
+
+/**
+ * Kerb fillets: where two roads meet at an angle, the inside corner between
+ * their edges is sharp, and no car can get round it from the inner lane
+ * without touching it. Real junctions round that corner with a kerb radius.
+ * For every pair of neighbouring roads at a node this returns the small
+ * patch between the two edges and a circular arc tangent to both, which is
+ * merged into the road surface.
+ */
+export function buildKerbFillets(roadsAtNode, tangentLength) {
+  if (tangentLength <= 0) return [];
+  const fillets = [];
+  for (const [node, roads] of roadsAtNode) {
+    if (roads.length < 2) continue;
+    const arms = roads
+      .map((road) => {
+        const other = road.segment.otherEnd(node);
+        const dir = other.subtract(node).normalize();
+        return { road, dir, angle: dir.angle(), length: node.distanceTo(other), half: road.width / 2 };
+      })
+      .sort((a, b) => a.angle - b.angle);
+    for (let i = 0; i < arms.length; i++) {
+      const a = arms[i];
+      const b = arms[(i + 1) % arms.length];
+      let gap = b.angle - a.angle;
+      if (gap <= 0) gap += Math.PI * 2;
+      // Only real corners: not almost-straight continuations, not reflex angles.
+      if (gap < degToRad(25) || gap > degToRad(155)) continue;
+      const fillet = kerbFillet(node, a, b, gap, tangentLength);
+      if (fillet) fillets.push(fillet);
+    }
+  }
+  return fillets;
+}
+
+function kerbFillet(node, a, b, gap, tangentLength) {
+  // Arm b is `gap` radians clockwise from arm a, so a's edge facing b is on
+  // a's right (+perpendicular) and b's edge facing a is on b's left.
+  const nA = a.dir.perpendicular();
+  const nB = b.dir.perpendicular().scale(-1);
+  const edgeA = node.add(nA.scale(a.half));
+  const edgeB = node.add(nB.scale(b.half));
+  const hit = getLineIntersection(edgeA, edgeA.add(a.dir), edgeB, edgeB.add(b.dir));
+  if (!hit || hit.offset <= 0 || hit.u <= 0) return null;
+  const corner = new Point(hit.x, hit.y);
+  const reach = Math.min(tangentLength, a.length * 0.4 - hit.offset, b.length * 0.4 - hit.u);
+  if (reach <= 1) return null;
+  const pA = corner.add(a.dir.scale(reach));
+  const pB = corner.add(b.dir.scale(reach));
+  // Arc tangent to both edges: centre `radius` away from each, inside the corner.
+  const radius = reach * Math.tan(gap / 2);
+  const centre = pA.add(nA.scale(radius));
+  const start = pA.subtract(centre).angle();
+  const end = pB.subtract(centre).angle();
+  let sweep = end - start;
+  while (sweep > Math.PI) sweep -= Math.PI * 2;
+  while (sweep < -Math.PI) sweep += Math.PI * 2;
+  // The straight sides are pushed 1 unit into the roads so the union treats
+  // the old sharp kerb as covered (a shared edge would be ambiguous).
+  const inset = 1;
+  const points = [corner.subtract(nA.scale(inset)).subtract(nB.scale(inset)), pA.subtract(nA.scale(inset))];
+  const n = 8;
+  for (let k = 1; k < n; k++) points.push(centre.add(Point.fromAngle(start + (sweep * k) / n, radius)));
+  points.push(pB.subtract(nB.scale(inset)));
+  return new Polygon(points);
 }

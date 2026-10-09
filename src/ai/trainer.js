@@ -17,42 +17,112 @@ export const TRAINER_DEFAULTS = {
   populationSize: 150,
   hidden: [8],
   sensor: DEFAULT_BRAIN_SENSOR,
-  generationTime: 40, // s of simulated time per generation
-  stallTime: 4, // s without reaching new road before a car is removed
+  generationTime: 40, // s of simulated time per generation (unless the environment sets one)
+  stallTime: 4, // s without reaching new road before a car is removed (coverage environment)
   sensorNoise: false, // train with the 'realistic' sensor preset
+  allowReverse: false,
   seed: 1,
   ...GA_DEFAULTS,
 };
 
 /**
- * Weeks 15–16: population training.
+ * Phase 4 environment: drive anywhere, fitness = metres of distinct road.
+ * See src/training/environments.js for the interface.
+ */
+export class CoverageEnvironment {
+  constructor(roads, world, { spawn = null, stallTime = 4 } = {}) {
+    this.roads = roads;
+    this.world = world;
+    this.spawn = spawn ?? Trainer.chooseSpawn(roads);
+    this.coverage = new RoadCoverage(roads);
+    this.stallTime = stallTime;
+    this.navigation = false;
+    this.rank = 0;
+    this.timeLimit = null;
+    this.extraObstacles = [];
+  }
+
+  beginGeneration() {}
+
+  step() {}
+
+  obstacles() {
+    return this.extraObstacles;
+  }
+
+  evaluator() {
+    const tracker = this.coverage.tracker();
+    const stallTime = this.stallTime;
+    let time = 0;
+    let lastProgress = 0;
+    return {
+      fitness: 0,
+      parts: null,
+      reached: false,
+      update(car, dt) {
+        time += dt;
+        if (tracker.visit(car.position)) {
+          lastProgress = time;
+          this.fitness = tracker.metres;
+        }
+        return time - lastProgress > stallTime ? 'stalled' : null;
+      },
+      crash() {},
+    };
+  }
+
+  navigationInputs() {
+    return null;
+  }
+}
+
+/**
+ * Weeks 15–16 (and 18): population training.
  *
- * Every generation spawns `populationSize` cars at the same spot, each with
- * its own brain and ray sensor. The cars are ghosts to each other but crash
- * into road borders and traffic. A car is removed when it crashes or stalls
- * (no new road for `stallTime` seconds); the generation ends when every car
- * is out or time runs out.
+ * Every generation spawns `populationSize` cars at the environment's start,
+ * each with its own brain and ray sensor. The cars are ghosts to each other
+ * but crash into road borders and the environment's obstacles (parked cars,
+ * traffic). A car is removed when it crashes or its evaluator ends the run
+ * (stalled, lost, finished); the generation ends when every car is out or
+ * time runs out. The next generation comes from the genetic algorithm, and
+ * the best brain ever seen is kept as the champion.
  *
- * Fitness = metres of distinct road driven (RoadCoverage). The next
- * generation comes from the genetic algorithm, and the best brain ever seen
- * is kept as the champion.
+ * The simulation is stepped with a fixed dt by the caller, so a brain scores
+ * exactly the same every time it drives: elites replay their score.
  */
 export class Trainer {
   constructor(roads, world, options = {}) {
     this.options = { ...TRAINER_DEFAULTS, ...options };
-    this.roads = roads;
-    this.world = world;
     this.rng = createRng(this.options.seed);
-    this.coverage = new RoadCoverage(roads);
-    this.caster = new RayCaster(world);
-    this.spawn = this.options.spawn ?? Trainer.chooseSpawn(roads);
+    this.environment =
+      options.environment ?? new CoverageEnvironment(roads, world, { spawn: options.spawn, stallTime: this.options.stallTime });
+    this.caster = new RayCaster(this.environment.world);
 
     this.generation = 0;
     this.time = 0;
+    this.steps = 0; // simulation steps taken, for steps/s
     this.agents = [];
-    this.history = []; // [{ generation, best, average, champion }]
-    this.champion = options.champion ?? null; // { brain (JSON), fitness, generation }
+    this.history = []; // [{ generation, best, average, survival, reached, champion, course, mutationRate }]
+    this.champion = options.champion ?? null; // { brain (JSON), fitness, generation, rank, course }
     this.championChanged = false;
+  }
+
+  get spawn() {
+    return this.environment.spawn;
+  }
+
+  get world() {
+    return this.environment.world;
+  }
+
+  get generationTime() {
+    return this.environment.timeLimit ?? this.options.generationTime;
+  }
+
+  /** Swap the environment (curriculum); the next generation spawns there. */
+  setEnvironment(environment) {
+    this.environment = environment;
+    this.caster = new RayCaster(environment.world);
   }
 
   /**
@@ -145,9 +215,12 @@ export class Trainer {
     this.#spawnGeneration(genomes);
   }
 
+  get inputCount() {
+    return Brain.inputCount(this.options.sensor, this.environment.navigation);
+  }
+
   #newNetwork() {
-    const { sensor, hidden } = this.options;
-    return new NeuralNetwork([sensor.rayCount + 1, ...hidden, 3]);
+    return new NeuralNetwork([this.inputCount, ...this.options.hidden, 3]);
   }
 
   /** A champion trained with a different layout can't seed this run. */
@@ -161,12 +234,14 @@ export class Trainer {
   }
 
   #spawnGeneration(genomes) {
-    const { sensor, sensorNoise } = this.options;
+    const { sensor, sensorNoise, allowReverse } = this.options;
+    const env = this.environment;
     const template = this.#newNetwork();
+    env.beginGeneration();
     this.time = 0;
     this.agents = genomes.map((genome, i) => {
-      const car = new Car({ x: this.spawn.x, y: this.spawn.y, angle: this.spawn.angle, color: '#4aa3ff', kind: 'agent' });
-      const brain = new Brain({ sensor, network: template.clone().setGenome(genome) });
+      const car = new Car({ x: env.spawn.x, y: env.spawn.y, angle: env.spawn.angle, color: '#4aa3ff', kind: 'agent' });
+      const brain = new Brain({ sensor, navigation: env.navigation, allowReverse, network: template.clone().setGenome(genome) });
       const raySensor = new RaySensor({ name: 'rays', ...sensor, seed: this.generation * 1000 + i + 1 });
       if (sensorNoise) raySensor.configure(imperfectionsFor(raySensor.spec, PRESETS.realistic));
       return {
@@ -174,45 +249,49 @@ export class Trainer {
         brain,
         genome,
         sensor: raySensor,
-        tracker: this.coverage.tracker(),
+        evaluator: env.evaluator(),
         alive: true,
         fitness: 0,
-        lastProgress: 0,
-        outcome: null, // 'crashed' | 'stalled' | 'timeout'
+        outcome: null, // 'crashed' | 'stalled' | 'lost' | 'finished' | 'timeout'
         elite: i < Math.min(this.options.elitism, genomes.length) && this.generation > 0,
       };
     });
   }
 
   /**
-   * Advance every live car by dt. `obstacles` are cars the agents can hit
-   * (traffic); `surface` and `model` match the main simulation.
+   * Advance every live car by dt. `obstacles` adds cars to hit on top of the
+   * environment's own; `surface` and `model` match the main simulation.
    */
   update(dt, { obstacles = [], surface = SURFACES.dry, model = PhysicsModel.REALISTIC } = {}) {
     if (this.agents.length === 0) return;
+    const env = this.environment;
     this.time += dt;
-    const env = { time: this.time, dt, cars: obstacles, caster: this.caster };
+    this.steps++;
+    env.step(dt);
+    const hazards = obstacles.length ? [...env.obstacles(), ...obstacles] : env.obstacles();
+    const sense = { time: this.time, dt, cars: hazards, caster: this.caster };
 
     for (const agent of this.agents) {
       if (!agent.alive) continue;
-      const { car } = agent;
-      agent.sensor.update({ ...env, car });
-      car.input = agent.brain.drive(agent.sensor.read(this.time), car);
+      const { car, evaluator } = agent;
+      agent.sensor.update({ ...sense, car });
+      const reading = agent.sensor.read(this.time);
+      car.input = agent.brain.drive(reading, car, env.navigationInputs(evaluator));
       car.surface = surface;
       car.step(dt, model);
 
-      if (this.#crashed(car, obstacles)) {
+      if (this.#crashed(car, hazards)) {
+        evaluator.crash();
+        agent.fitness = evaluator.fitness;
         this.#retire(agent, 'crashed');
         continue;
       }
-      if (agent.tracker.visit(car.position)) {
-        agent.lastProgress = this.time;
-        agent.fitness = agent.tracker.metres;
-      }
-      if (this.time - agent.lastProgress > this.options.stallTime) this.#retire(agent, 'stalled');
+      const outcome = evaluator.update(car, dt, reading);
+      agent.fitness = evaluator.fitness;
+      if (outcome) this.#retire(agent, outcome);
     }
 
-    if (this.time >= this.options.generationTime) {
+    if (this.time >= this.generationTime) {
       for (const agent of this.agents) if (agent.alive) this.#retire(agent, 'timeout');
     }
     if (this.agents.every((a) => !a.alive)) this.nextGeneration();
@@ -238,37 +317,66 @@ export class Trainer {
   /** Score the generation, update the champion and breed the next one. */
   nextGeneration() {
     if (this.agents.length === 0) return;
+    const env = this.environment;
     const scored = this.agents.map((a) => ({ genome: a.genome, fitness: a.fitness, agent: a }));
     const best = scored.reduce((x, y) => (y.fitness > x.fitness ? y : x));
     const average = scored.reduce((sum, s) => sum + s.fitness, 0) / scored.length;
+    const n = this.agents.length;
+    const rank = env.rank ?? 0;
 
-    if (!this.champion || best.fitness > this.champion.fitness) {
-      this.champion = { brain: best.agent.brain.toJSON(), fitness: best.fitness, generation: this.generation };
+    const better =
+      !this.champion ||
+      rank > (this.champion.rank ?? 0) ||
+      (rank === (this.champion.rank ?? 0) && best.fitness > this.champion.fitness);
+    if (better) {
+      this.champion = {
+        brain: best.agent.brain.toJSON(),
+        fitness: best.fitness,
+        generation: this.generation,
+        rank,
+        course: env.course?.id ?? null,
+      };
       this.championChanged = true;
     }
-    this.history.push({ generation: this.generation, best: best.fitness, average, champion: this.champion.fitness });
+
+    const entry = {
+      generation: this.generation,
+      best: best.fitness,
+      average,
+      survival: this.agents.filter((a) => a.outcome !== 'crashed').length / n,
+      reached: this.agents.filter((a) => a.outcome === 'finished').length / n,
+      champion: this.champion.fitness,
+      course: env.course?.id ?? null,
+      mutationRate: this.options.mutationRate,
+      population: n,
+    };
+    this.history.push(entry);
 
     const genomes = nextGeneration(scored, this.options.populationSize, this.options, this.rng);
     this.generation++;
+    // Hook for the curriculum: it may switch the environment before the next spawn.
+    this.options.onGenerationEnd?.(entry, this);
     this.#spawnGeneration(genomes);
   }
 
   stats() {
-    const alive = this.alive.length;
     const leader = this.leader;
+    const count = (outcome) => this.agents.filter((a) => a.outcome === outcome).length;
     return {
       generation: this.generation,
       time: this.time,
-      alive,
+      alive: this.alive.length,
       total: this.agents.length,
       leaderFitness: leader?.fitness ?? 0,
       champion: this.champion?.fitness ?? 0,
-      crashed: this.agents.filter((a) => a.outcome === 'crashed').length,
-      stalled: this.agents.filter((a) => a.outcome === 'stalled').length,
+      crashed: count('crashed'),
+      stalled: count('stalled'),
+      lost: count('lost'),
+      finished: count('finished'),
     };
   }
 
-  // ---- drawing --------------------------------------------------------------
+  // ---- drawing (in-thread Phase 4 view) ------------------------------------
 
   draw(ctx, px) {
     const leader = this.leader;

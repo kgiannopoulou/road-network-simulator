@@ -139,28 +139,51 @@
     </aside>
 
     <aside id="training-panel" class="panel training-panel" hidden>
-      <h2>Training <span class="sub">neural network + genetic algorithm</span></h2>
-      <div class="train-stats" data-train-stats></div>
+      <h2>Training dashboard <span class="sub">neural network + genetic algorithm</span></h2>
+
+      <div class="row">
+        <select data-train="mode" title="What to train on"></select>
+      </div>
       <div class="row">
         <button data-train-action="start">Start</button>
+        <button data-train-action="pause" title="Pause / resume (P)">Pause</button>
         <button data-train-action="next" title="End this generation now">Next gen</button>
-        <button data-train-action="stop">Stop</button>
-        <span></span>
-        <select data-train="speed" title="Simulation steps per frame">
-          <option value="1">×1</option>
-          <option value="2">×2</option>
-          <option value="5">×5</option>
-          <option value="10">×10</option>
-          <option value="25">×25</option>
-        </select>
+        <button data-train-action="skip" title="Move to the next course">Skip course</button>
+        <button data-train-action="stop" class="danger">Stop</button>
+      </div>
+      <div class="row speeds" data-speeds title="Simulation speed ( [ / ] )"></div>
+      <div class="row toggles">
+        <label><input type="checkbox" data-train="render" checked /> Render world <kbd>Z</kbd></label>
+        <label title="Run training in a background thread"><input type="checkbox" data-train="worker" /> Web Worker</label>
+      </div>
+      <p class="train-status" data-train-status></p>
+
+      <div class="tiles">
+        <div data-tile="generation"><span>Generation</span><b>–</b><small></small></div>
+        <div data-tile="population"><span>Population</span><b>–</b><small></small></div>
+        <div data-tile="mutation"><span>Mutation rate</span><b>–</b><small></small></div>
+        <div data-tile="best"><span>Best fitness</span><b>–</b><small></small></div>
+        <div data-tile="average"><span>Avg fitness</span><b>–</b><small></small></div>
+        <div data-tile="survival"><span>Survival</span><b>–</b><small></small></div>
+        <div data-tile="time"><span>Training time</span><b>–</b><small></small></div>
+        <div data-tile="sim"><span>Simulated</span><b>–</b><small></small></div>
+        <div data-tile="speed"><span>Speed</span><b>–</b><small></small></div>
       </div>
 
-      <h3>Leader's brain</h3>
-      <canvas id="network-view" width="300" height="170" aria-label="Neural network of the leading car"></canvas>
+      <h3>Curriculum</h3>
+      <ol id="curriculum-steps" class="curriculum"></ol>
+      <p class="hint" data-course-info></p>
 
-      <h3>Fitness <span class="sub">metres of distinct road</span></h3>
+      <h3>Fitness over generations</h3>
       <div id="fitness-legend" class="legend"></div>
-      <canvas id="fitness-chart" width="300" height="110" aria-label="Best and average fitness per generation"></canvas>
+      <canvas id="fitness-chart" width="340" height="120" aria-label="Best and average fitness per generation"></canvas>
+      <h3>Survival over generations</h3>
+      <div id="survival-legend" class="legend"></div>
+      <canvas id="survival-chart" width="340" height="100" aria-label="Share of cars surviving and reaching the destination per generation"></canvas>
+
+      <h3>Leader</h3>
+      <div class="breakdown" data-breakdown></div>
+      <canvas id="network-view" width="340" height="190" aria-label="Neural network of the leading car"></canvas>
 
       <h3>Champion</h3>
       <p class="champion" data-champion></p>
@@ -169,21 +192,25 @@
         <button data-train-action="forget" class="danger" title="Delete the saved champion">Forget</button>
       </div>
 
-      <h3>Population <span class="sub">applies on (re)start</span></h3>
-      <div class="cfg"><span>Cars</span><input type="range" min="20" max="500" step="10" value="150" data-train="populationSize" /><output data-out="train-populationSize"></output></div>
-      <div class="cfg"><span>Hidden</span><input type="range" min="2" max="16" step="1" value="8" data-train="hidden" /><output data-out="train-hidden"></output></div>
-      <div class="cfg"><span>Time (s)</span><input type="range" min="10" max="120" step="5" value="40" data-train="generationTime" /><output data-out="train-generationTime"></output></div>
-      <label class="row"><input type="checkbox" data-train="sensorNoise" /> Train with realistic sensor noise</label>
-      <label class="row"><input type="checkbox" data-train="fromCar" /> Start from my car's position</label>
-      <label class="row"><input type="checkbox" data-train="continueChampion" checked /> Continue from the champion</label>
-
-      <h3>Genetic algorithm <span class="sub">live</span></h3>
-      <div class="cfg"><span>Mutation</span><input type="range" min="0" max="0.5" step="0.01" value="0.1" data-train="mutationRate" /><output data-out="train-mutationRate"></output></div>
-      <div class="cfg"><span>Amount</span><input type="range" min="0" max="1" step="0.05" value="0.3" data-train="mutationAmount" /><output data-out="train-mutationAmount"></output></div>
-      <div class="cfg"><span>Crossover</span><input type="range" min="0" max="1" step="0.05" value="0.7" data-train="crossoverRate" /><output data-out="train-crossoverRate"></output></div>
-      <div class="cfg"><span>Elitism</span><input type="range" min="0" max="20" step="1" value="2" data-train="elitism" /><output data-out="train-elitism"></output></div>
-      <div class="cfg"><span>Tournament</span><input type="range" min="2" max="10" step="1" value="4" data-train="tournamentSize" /><output data-out="train-tournamentSize"></output></div>
+      <details>
+        <summary>Settings <span class="sub">apply on (re)start</span></summary>
+        <div class="cfg"><span>Cars</span><input type="range" min="20" max="500" step="10" value="150" data-train="populationSize" /><output data-out="train-populationSize"></output></div>
+        <div class="cfg"><span>Hidden</span><input type="range" min="2" max="16" step="1" value="8" data-train="hidden" /><output data-out="train-hidden"></output></div>
+        <div class="cfg"><span>Pass %</span><input type="range" min="1" max="50" step="1" value="5" data-train="passShare" /><output data-out="train-passShare"></output></div>
+        <div class="cfg"><span>Map traffic</span><input type="range" min="0" max="20" step="1" value="0" data-train="mapTraffic" /><output data-out="train-mapTraffic"></output></div>
+        <div class="cfg"><span>Mutation</span><input type="range" min="0" max="0.5" step="0.01" value="0.1" data-train="mutationRate" /><output data-out="train-mutationRate"></output></div>
+        <div class="cfg"><span>Amount</span><input type="range" min="0" max="1" step="0.05" value="0.3" data-train="mutationAmount" /><output data-out="train-mutationAmount"></output></div>
+        <div class="cfg"><span>Crossover</span><input type="range" min="0" max="1" step="0.05" value="0.7" data-train="crossoverRate" /><output data-out="train-crossoverRate"></output></div>
+        <div class="cfg"><span>Elitism</span><input type="range" min="0" max="20" step="1" value="2" data-train="elitism" /><output data-out="train-elitism"></output></div>
+        <div class="cfg"><span>Tournament</span><input type="range" min="2" max="10" step="1" value="4" data-train="tournamentSize" /><output data-out="train-tournamentSize"></output></div>
+        <label class="row"><input type="checkbox" data-train="continueChampion" checked /> Continue from the champion</label>
+        <label class="row"><input type="checkbox" data-train="sensorNoise" /> Realistic sensor noise</label>
+        <label class="row"><input type="checkbox" data-train="allowReverse" /> Allow reversing</label>
+        <h3>Fitness weights</h3>
+        <div data-weights></div>
+      </details>
     </aside>
+    <div class="render-off" data-render-off hidden>Rendering is off; training continues (Z to turn it back on)</div>
 
     <aside id="help" class="panel help" hidden>
       <h2>Controls</h2>
@@ -222,7 +249,8 @@
       </ul>
       <h3>Train mode <kbd>4</kbd></h3>
       <ul>
-        <li>Start a run in the training panel; the camera follows the leader</li>
+        <li>Pick a course (or the whole curriculum) and press Start</li>
+        <li><kbd>[</kbd>/<kbd>]</kbd> slower / faster · <kbd>Z</kbd> rendering on/off · <kbd>P</kbd> pause</li>
         <li><kbd>K</kbd> (drive mode) autopilot: the champion drives your car</li>
       </ul>
       <h3>Sensors</h3>

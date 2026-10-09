@@ -2,15 +2,17 @@
 
 A 2D road network simulator built from scratch with plain HTML, CSS and JavaScript ES modules on a single `<canvas>`. There is no framework, no bundler and no runtime dependencies.
 
-The repository currently holds four phases:
+The repository currently holds five phases:
 
 - **Phase 1: simulator foundation.** The engine, a geometry library, an editable road graph, and procedural road generation with lanes, centre lines and direction arrows.
 - **Phase 2: cars.** A drivable car with a bicycle-model physics engine, SAT collision detection against road borders and other cars, and traffic vehicles that follow routes, keep their distance and get around obstacles.
 - **Phase 3: sensors.** A ray sensor, a spinning LiDAR, radar, GPS and an IMU behind one standard API. Each sensor can be given noise, latency, limited range, dropped measurements and failures, so a future autonomous driver can't rely on perfect information.
 - **Phase 4: first self-driving AI.** A neural network written from scratch, connected to the car's sensors and controls, and trained by a genetic algorithm on populations of up to 500 cars.
+- **Phase 5: training system.** A detailed fitness function, a six-course curriculum, a training dashboard, and fast simulation up to "as fast as possible" in a Web Worker.
 
 **Milestone #1 reached:** a manually drivable traffic simulator.
 **Milestone #2 reached:** cars learn basic road following.
+**Milestone #3 reached:** an actual AI-training environment.
 
 ![Traffic with sensor debug view](docs/screenshot-traffic.png)
 
@@ -41,6 +43,7 @@ npm test                      # unit tests (Node ≥ 22, built-in node:test, no 
 | 2. Cars | 5–8 | ✅ |
 | 3. Sensors | 9–12 | ✅ |
 | 4. First self-driving AI | 13–16 | ✅ |
+| 5. Training system | 17–20 | ✅ |
 
 ## Phase 1: simulator foundation
 
@@ -99,6 +102,7 @@ Each edge carries `lanes` and `oneWay`. `RoadNetwork` turns the graph into road 
    - At **junctions**, markings are clipped where they enter another road's surface.
    - Through **simple bends** (a degree-2 node with the same lane layout), markings are mitred so they join without a gap.
 5. **Direction arrows:** each lane gets arrows at regular intervals. They are placed by transforming an arrow template polygon with a `Matrix`.
+6. **Kerb fillets** (added in Phase 5): where two roads meet at an angle, the sharp inside corner is rounded with a circular kerb (tangent length 2.5 lane widths, about 8 m). The patch is merged into the road surface. Without it, no car can turn right out of a 3.3 m lane without clipping the corner.
 
 ## Phase 2: cars
 
@@ -281,7 +285,7 @@ Each sensor has a **datasheet** (`spec`): its 1σ noise per quantity, typical la
 
 ![Training a population](docs/screenshot-training.png)
 
-Press `4`, then **Start**. The camera follows the leading car, and the ×N selector fast-forwards (up to 25 simulation steps per frame). A trained champion can then drive your car: press `K` (autopilot).
+Press `4` to train (Phase 5 turned the training panel into a full dashboard, see below). A trained champion can then drive your car: press `K` (autopilot).
 
 ### Week 13: neural network (`src/ai/network.js`, `activations.js`)
 
@@ -337,6 +341,93 @@ Sensors → Inputs → Hidden layer → Outputs → Throttle / Brake / Steering
 - The brain has no route or destination input, so at a junction it goes wherever its reflexes take it.
 - It follows the road, but doesn't keep to a lane.
 
+## Phase 5: training system
+
+| Week | Goal | Status |
+| --- | --- | --- |
+| 17 | **Better fitness:** reward road progress, lane position, smooth steering, safe speed and reaching destinations; penalise crashes, needless reversing, leaving lanes and dangerous behaviour | ✅ |
+| 18 | **Training curriculum:** Straight → Curves → Sharp turns → Obstacles → Traffic → Intersections | ✅ |
+| 19 | **Training dashboard:** generation, population, best and average fitness, mutation rate, survival, training time; fitness plotted over generations | ✅ |
+| 20 | **Fast simulation:** 1×, 2×, 5×, 10×, 50× and maximum speed; rendering can be switched off; training runs in a Web Worker | ✅ |
+
+![Training dashboard](docs/screenshot-dashboard.png)
+
+Press `4`, pick **Curriculum** (or one course, or *Your map*) and **Start**. `[` / `]` change the speed, `Z` turns rendering off and `P` pauses.
+
+### Routes and navigation (`src/training/navigator.js`)
+
+To follow a route through junctions, a brain needs to know where the route goes. Phase 5 brains get two extra inputs from a `Navigator` that tracks the car along its route's lane path:
+
+| Input | Meaning |
+| --- | --- |
+| `route` | sin(bearing to the route 12 m ahead): which way the road you should take bends |
+| `lane` | offset from the nearest lane centre going your way, ±1 = half a lane |
+
+The network becomes 10-8-3 (7 rays + speed + 2 navigation inputs). On your map, the autopilot plans a random route from where the car is and draws it as a green dashed line. It localises with the **GPS reading**, so sensor imperfections affect it.
+
+### Week 17: better fitness (`fitness.js`)
+
+A `FitnessEvaluator` per car scores every step and keeps each term separately. The dashboard shows the leader's breakdown as bars.
+
+| Reward / penalty | Default weight |
+| --- | --- |
+| **Progress:** furthest point along the route | +1 per metre |
+| **Destination:** arriving (within 6 m of the end) | +150, + 2 per second left |
+| **Lane position:** distance from the nearest lane centre beyond 0.3 m | −2 per metre·second |
+| **Leaving lanes:** not in any lane going your way (oncoming lane, off route) | −6 per second |
+| **Steering smoothness:** change of steering command | −0.4 per unit of change |
+| **Safe speed:** above the course speed limit | −3 per (m/s)·second |
+| **Unnecessary reversing:** reversing with nothing within 2 m ahead | −5 per second |
+| **Danger:** an obstacle within 1.5 m, or under 1 s to impact | −4 per second |
+| **Crash** | −30 once |
+| **Stalled / lost:** no progress for 5 s, or far off the route | −20 once |
+
+- **Weights are editable** in the dashboard settings.
+- **Why stalling costs points:** without that penalty the population learned to stop safely in front of every sharp corner. Stopping scored better than trying the turn and sometimes crashing.
+
+### Week 18: training curriculum (`courses.js`, `trainingWorld.js`, `session.js`)
+
+| # | Course | What it teaches |
+| --- | --- | --- |
+| 1 | Straight | 260 m two-lane road: accelerate, stay in lane |
+| 2 | Curves | Gentle S-bends: smooth steering |
+| 3 | Sharp turns | 90° corners and a tight double bend: brake before turning |
+| 4 | Obstacles | One-way street with parked cars in alternating lanes: change lanes |
+| 5 | Traffic | Busy four-lane road, traffic both ways: keep your distance or overtake |
+| 6 | Intersections | 3 × 3 grid, route turns right, left and goes straight: follow the route |
+
+- **Self-contained courses.** Each course is a small road graph with its own route, speed limit, time limit, parked cars and traffic, built by a `TrainingWorld` (your map is a `TrainingWorld` too). Courses are deterministic, so the page and the worker build identical ones from an id.
+- **Fair traffic.** Traffic is reset with the same seed every generation, so every brain faces the same situation and elites still replay their score.
+- **Advancing.** `TrainingSession` moves on when **5 % of the population reaches the destination three generations in a row** (adjustable). The population carries over to the next course, and the dashboard marks every course change on the charts.
+- **Champions across courses.** A champion from a harder course beats a higher score on an easier one.
+- **Drivability check.** A unit test drives every course with an ideal controller to prove it can be done without touching a kerb. That test is what uncovered the missing kerb radii at junctions.
+- **How far it gets.** In a headless run of 150 cars, Straight, Curves and Sharp turns were passed within ~40 generations, and the Obstacles destination was reached by generation 48.
+
+### Week 19: training dashboard (`ui/trainingDashboard.js`, `ui/lineChart.js`)
+
+- **Tiles:** generation (and its clock), population (and how many are alive), best and average fitness of the last generation (with the champion), mutation rate, survival (and arrivals), wall-clock training time, simulated time, and speed (× real time and steps per second).
+- **Curriculum progress:** done ✓, current course, its description and the pass streak.
+- **Charts over generations:**
+  - best and average fitness;
+  - survival and arrival rates on a separate 0–100 % chart (one axis per chart);
+  - course changes drawn as markers;
+  - hover for each generation's values.
+- **Leader view:** its fitness breakdown and live network, including hidden-layer activations.
+- **Champion and settings:** the champion (saved to localStorage), and all settings: population, hidden neurons, pass rate, GA parameters, sensor noise, reversing, fitness weights.
+
+### Week 20: fast simulation (`speed.js`, `runner.js`, `worker.js`)
+
+- **Fixed steps.** Training always advances in fixed 1/60 s steps, so results don't depend on the frame rate.
+  - **1×, 2×, 5×, 10×, 50×:** that many simulated seconds per real second. A backlog (from a hidden tab) is dropped rather than replayed in one burst.
+  - **Max:** as many steps as fit in each 40 ms slice.
+- **Web Worker (default).** The whole training stack is DOM-free, so `worker.js` runs the same `TrainingSession`. The page receives a ~15 Hz snapshot (agent poses in a transferable `Float32Array`, leader brain, stats, history) and only draws. Untick it to run on the main thread instead: `LocalRunner` steps the session inside the render loop with a frame budget.
+- **Rendering off (`Z`).** Skips drawing the world entirely while the dashboard keeps updating.
+- **Throughput.** About 3,000–6,000 steps/s with 150 cars in a worker (50–100× real time), against roughly 900–2,400 steps/s on the main thread while it also renders.
+
+![Rendering off](docs/screenshot-render-off.png)
+
+**Milestone #3: an actual AI-training environment.** You can pick what to train on, choose how fast, watch or not, measure it, and keep the best brain.
+
 ## Controls
 
 | Input | Action |
@@ -383,13 +474,14 @@ Sensors → Inputs → Hidden layer → Outputs → Throttle / Brake / Steering
 | Input | Action |
 | --- | --- |
 | `T` | Traffic on / off |
-| `[` / `]` | Fewer / more vehicles |
+| `[` / `]` | Fewer / more vehicles (in Train mode: slower / faster) |
 | `M` | Physics model: basic (week 5) / bicycle (week 6) |
 | `Y` | Road surface: dry / wet / icy |
 | `C` | Collision debug view |
 | `X` | Traffic routes view |
 | `N` | Ghost mode (player ignores collisions) |
-| `P` | Pause |
+| `P` | Pause (in Train mode: pause training) |
+| `Z` | Train mode: rendering on / off |
 | `I` | Sensor panel + sensor views on the map |
 | `U` | Sensor imperfections: perfect / realistic / degraded |
 
@@ -414,14 +506,16 @@ src/
                         imperfections.js · noise.js · sensorSuite.js
   sim/simulation.js     cars, substepping, collisions, traffic, sensors, debug drawing
   ai/                   network.js · activations.js · brain.js · genetics.js · trainer.js · coverage.js · championStore.js
-  ui/                   controls.js · hud.js · sensorPanel.js · trainingPanel.js · networkView.js · fitnessChart.js
+  training/             courses.js · trainingWorld.js · navigator.js · fitness.js · environments.js · session.js
+                        speed.js · runner.js · worker.js · trainingView.js
+  ui/                   controls.js · hud.js · sensorPanel.js · trainingDashboard.js · lineChart.js · networkView.js
   data/demo.js          sample network
 tests/
-  unit/                 node:test suites: geometry, graph, roads, car physics, collisions, traffic, sensors, AI
+  unit/                 node:test suites: geometry, graph, roads, car physics, collisions, traffic, sensors, AI, training
   visual/               interactive geometry test gallery
 ```
 
-Every module under `math/`, `primitives/`, `graph/graph.js`, `road/`, `car/`, `collision/`, `traffic/`, `sensors/`, `ai/` and `sim/` is DOM-free. The unit tests run them directly in Node, and later phases can reuse them in workers.
+Every module under `math/`, `primitives/`, `graph/graph.js`, `road/`, `car/`, `collision/`, `traffic/`, `sensors/`, `ai/`, `training/` (except the worker glue) and `sim/` is DOM-free. The unit tests run them directly in Node, and later phases can reuse them in workers.
 
 ## Design notes
 
@@ -431,6 +525,7 @@ Every module under `math/`, `primitives/`, `graph/graph.js`, `road/`, `car/`, `c
 - **One input interface for every driver.** The keyboard, traffic drivers and (later) AI all just set `car.input`. Physics doesn't know who is driving.
 - **Decide once per frame, integrate in substeps.** Drivers choose their inputs once per frame. Physics and collision resolution run in as many substeps as the fastest car needs.
 - **Deterministic traffic.** Routes, spawns and vehicle variety come from a seeded RNG, so the regression tests replay exactly.
+- **One session, two hosts.** Training only talks to the page through plain-data snapshots, so the main thread and a Web Worker run exactly the same code.
 - **Evolution needs determinism.** With a fixed seed and no sensor noise, a brain gets exactly the same score every time it drives. That is what makes elitism meaningful.
 - **Ground truth and perception stay separate.** Sensors read the simulation's true state, but everything downstream gets only delivered sensor readings. The next phases can't cheat by peeking at the world.
 

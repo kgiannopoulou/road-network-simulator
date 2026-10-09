@@ -129,7 +129,7 @@ export class Controls {
   #statusText() {
     const e = this.editor;
     if (e.mode === EditorMode.TRAIN) {
-      return '<b>Train</b> · cars learn to follow the road · camera follows the leader · speed up with the ×N selector · <kbd>1</kbd> back to editing';
+      return '<b>Train</b> · pick a course and press Start · <kbd>[</kbd>/<kbd>]</kbd> speed · <kbd>Z</kbd> rendering · <kbd>P</kbd> pause · camera follows the leader · <kbd>1</kbd> back to editing';
     }
     if (e.mode === EditorMode.DRIVE) {
       return '<b>Drive</b> · <kbd>↑</kbd><kbd>W</kbd> throttle · <kbd>↓</kbd><kbd>S</kbd> brake / reverse · <kbd>←</kbd><kbd>→</kbd> steer · <kbd>Space</kbd> handbrake · <kbd>R</kbd> reset car · <kbd>1</kbd> back to editing';
