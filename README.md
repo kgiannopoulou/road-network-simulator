@@ -1,752 +1,119 @@
 # Road Network Simulator
 
-A 2D road network simulator built from scratch with plain HTML, CSS and JavaScript ES modules on a single `<canvas>`. There is no framework, no bundler and no runtime dependencies.
+[![tests](https://github.com/kgiannopoulou/road-network-simulator/actions/workflows/test.yml/badge.svg)](https://github.com/kgiannopoulou/road-network-simulator/actions/workflows/test.yml)
+![Tests](https://img.shields.io/badge/tests-180%20passing-brightgreen)
+![Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-blue)
+![ML libraries](https://img.shields.io/badge/ML%20libraries-none%20(from%20scratch)-blueviolet)
+[![Live demo](https://img.shields.io/badge/demo-GitHub%20Pages-0969da)](https://kgiannopoulou.github.io/road-network-simulator/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
 
-The repository currently holds seven phases:
+A 2D city traffic simulator and self-driving-car lab, built from scratch in plain JavaScript on one
+`<canvas>`: an editable road network, vehicle physics and collisions, traffic that obeys signals and
+changes lanes, simulated sensors with realistic noise, cars that learn to drive with a neural
+network and a genetic algorithm, and an autonomous-driving stack that routes with A* and drives
+itself from A to B through traffic.
 
-- **Phase 1: simulator foundation.** The engine, a geometry library, an editable road graph, and procedural road generation with lanes, centre lines and direction arrows.
-- **Phase 2: cars.** A drivable car with a bicycle-model physics engine, SAT collision detection against road borders and other cars, and traffic vehicles that follow routes, keep their distance and get around obstacles.
-- **Phase 3: sensors.** A ray sensor, a spinning LiDAR, radar, GPS and an IMU behind one standard API. Each sensor can be given noise, latency, limited range, dropped measurements and failures, so a future autonomous driver can't rely on perfect information.
-- **Phase 4: first self-driving AI.** A neural network written from scratch, connected to the car's sensors and controls, and trained by a genetic algorithm on populations of up to 500 cars.
-- **Phase 5: training system.** A detailed fitness function, a six-course curriculum, a training dashboard, and fast simulation up to "as fast as possible" in a Web Worker.
-- **Phase 6: city simulation.** Junctions with lane connections, turning lanes, yielding and occupancy. Traffic lights, stop and yield signs, speed limits and zebra crossings with pedestrians. Lane IDs, lane changes, overtaking and merging. A highway with ramps, exits and acceleration lanes.
-- **Phase 7: navigation.** A GPS road graph, A* and Dijkstra routing from two clicks, and an autonomous-driving stack: perception, behaviour planner, trajectory planner and controller. It drives the player's car from A to B through traffic.
+**[▶ Open the live demo](https://kgiannopoulou.github.io/road-network-simulator/)** — press `5`,
+click a start and a destination, then *Drive autonomously*. Press `4` to watch a population train.
 
-**Milestone #1 reached:** a manually drivable traffic simulator.
-**Milestone #2 reached:** cars learn basic road following.
-**Milestone #3 reached:** an actual AI-training environment.
-**Milestone #4 reached:** a small functioning city traffic simulation.
-**Milestone #5 reached:** the autonomous car can attempt (and complete) A → B navigation.
+![Autonomous A-to-B drive, then training](docs/demo.gif)
 
-![The city](docs/screenshot-city.png)
+*Navigate mode: A* finds the route, then perception → behaviour planner → trajectory planner →
+controller drive the yellow car (shown 3× speed). Then Train mode: 150 cars with neural-network
+brains on the first curriculum course.*
+
+## What's inside
+
+| Area | Implemented | Code |
+| --- | --- | --- |
+| **Geometry** | Points, segments, polygons, envelopes, intersections, polygon union, matrices, seeded RNG | [`math/`](src/math) [`primitives/`](src/primitives) |
+| **Road graph** | Editable graph, lane layouts, procedural road surfaces and markings, kerb fillets, road types, highways with ramps | [`graph/`](src/graph) [`road/`](src/road) |
+| **Simulation** | Kinematic bicycle model with tyre grip and road surfaces, SAT collisions + spatial hash, substepping | [`car/`](src/car) [`collision/`](src/collision) [`sim/`](src/sim) |
+| **Traffic & city** | IDM car following, MOBIL lane changes, junction occupancy and conflicts, traffic lights, stop/yield signs, zebra crossings with pedestrians | [`traffic/`](src/traffic) [`city/`](src/city) |
+| **Perception** | Ray sensor, spinning LiDAR, radar, GPS, IMU behind one API, with noise, latency, dropouts and failures; object tracking | [`sensors/`](src/sensors) [`autonomy/perception.js`](src/autonomy/perception.js) |
+| **Planning** | Navigable lane graph, A* and Dijkstra over edges (turn restrictions, turn costs), behaviour state machine, Frenet quintic/quartic trajectory candidates | [`navigation/`](src/navigation) [`autonomy/`](src/autonomy) |
+| **Control** | Stanley steering, speed control, all through one `car.input` interface | [`autonomy/controller.js`](src/autonomy/controller.js) |
+| **Learning** | Feed-forward neural network, genetic algorithm, fitness function, six-course curriculum, Web Worker training, live dashboard | [`ai/`](src/ai) [`training/`](src/training) |
+
+Layer diagram and design decisions: **[docs/architecture.md](docs/architecture.md)**.
+
+## Built from scratch — no TensorFlow, no PyTorch, no libraries
+
+There are **zero runtime dependencies** and no build step. The neural network (forward pass,
+activations, weights as a genome), the genetic algorithm (tournament selection, uniform crossover,
+Gaussian mutation, elitism), the physics, collision detection, the sensors, A*, Dijkstra, the
+binary heap, the polynomial trajectory solver and the canvas renderer are all written by hand. The
+network is never trained with backpropagation: only evolution changes its weights.
+
+## Results
+
+**A* vs Dijkstra** ([full table](docs/benchmarks.md), `node tools/bench-pathfinding.mjs`): both
+always find routes of the same cost; for the shortest route A* expands about 75 % fewer edges.
+
+| Network | Directed edges | Dijkstra expanded | A* expanded | Speed-up (shortest) | Speed-up (fastest) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Grid 10×10 | 313 | 124 | 20 | 3.9× | 1.9× |
+| Grid 40×40 | 5,441 | 2,599 | 450 | 4.2× | 1.8× |
+
+**Training** ([docs/training.md](docs/training.md)): every run is reproducible from a JSON config
+and a seed. The default settings plateau on the sharp-turns course; an experiment over network size
+and mutation strength (3 seeds each) showed exploration, not network capacity, was the bottleneck.
+
+![Fitness with stronger mutation](results/training/curriculum-mutation/fitness.svg)
+
+**Autonomy:** the unit tests drive the car across the city on its own, with and without traffic, and
+require arrival with zero collisions and zero red lights; a wider sweep of 36 random routes (350 m to
+2.2 km, 0–30 traffic cars) arrived 36/36.
 
 ## Quick start
 
-ES modules don't load from `file://`, so serve the folder over HTTP:
-
 ```bash
-npm start                     # npx http-server on http://localhost:8080
-# or
-python -m http.server 8080
+npm start               # serves the folder on http://localhost:8080 (or: python -m http.server 8080)
+npm test                # 180 unit tests, Node ≥ 22, built-in node:test, nothing to install
+npm run bench           # A* vs Dijkstra benchmark
+npm run train -- configs/training/baseline.json   # headless, reproducible training run
 ```
 
-| Page | URL |
+ES modules don't load from `file://`, so open it over HTTP (or use the [live demo](https://kgiannopoulou.github.io/road-network-simulator/)).
+Modes: `1` graph editor · `2` roads · `3` drive · `4` train · `5` navigate · `H` help. All controls:
+[docs/controls.md](docs/controls.md).
+
+## Testing
+
+180 unit tests run in Node in about 10 seconds, on every push in CI — physics, collisions, traffic,
+junctions, sensors, the neural network and genetic operators, training, routing and end-to-end
+autonomous drives. The headless simulation is the same code the browser runs.
+
+- **Edge cases** ([`edge-cases.test.js`](tests/unit/edge-cases.test.js)): disconnected maps,
+  unreachable destinations, dead ends vs loops, empty maps, degenerate geometry, shapes that only
+  touch, and A* = Dijkstra on 40 random networks.
+- **Reproducibility** ([`train-cli.test.js`](tests/unit/train-cli.test.js)): a training config
+  reproduces its committed metrics exactly.
+- **Milestones as tests**: zero car-to-car collisions in a minute of busy city traffic; cars learn
+  the straight course; the autonomous car completes A-to-B routes in traffic.
+- **Visual tests**: an interactive geometry gallery at `/tests/visual/`.
+
+## Documentation
+
+| | |
 | --- | --- |
-| Simulator (press `3` to drive, `4` to train AI) | `http://localhost:8080/` |
-| Geometry visual tests | `http://localhost:8080/tests/visual/` |
+| [Architecture](docs/architecture.md) | Layers, module map, design decisions |
+| [Build log](docs/phases.md) | Phases 1–7, week by week: what was built and what it took to make it work |
+| [Training](docs/training.md) | Reproducible configs, results, the mutation experiment |
+| [Benchmarks](docs/benchmarks.md) | A* vs Dijkstra, edge cases tested |
+| [Controls](docs/controls.md) | Every key and mouse action |
 
-```bash
-npm test                      # unit tests (Node ≥ 22, built-in node:test, no installs)
-```
+## Milestones
 
-## Roadmap
-
-| Phase | Weeks | Status |
+| Phase | Weeks | Milestone |
 | --- | --- | --- |
-| 1. Simulator foundation | 1–4 | ✅ |
-| 2. Cars | 5–8 | ✅ |
-| 3. Sensors | 9–12 | ✅ |
-| 4. First self-driving AI | 13–16 | ✅ |
-| 5. Training system | 17–20 | ✅ |
-| 6. City simulation | 21–24 | ✅ |
-| 7. Navigation | 25–28 | ✅ |
-
-## Phase 1: simulator foundation
-
-![Road network editor](docs/screenshot-roads.png)
-
-| Week | Goal | Status |
-| --- | --- | --- |
-| 1 | **Project + Canvas engine:** game loop, delta time, camera, mouse/keyboard input, FPS counter, debug tools | ✅ |
-| 2 | **Geometry library:** Point, Segment, Polygon, vector maths, `lerp()`, distances, line and polygon intersections, rotations, transformations | ✅ |
-| 3 | **Road graph:** add, remove, move and connect nodes; build networks by hand | ✅ |
-| 4 | **Road generation:** width, borders, centre lines, lane markings, lane count and direction; connected segments | ✅ |
-
-### Week 1: Canvas engine (`src/engine/`)
-
-- **`GameLoop`** runs on `requestAnimationFrame` with variable delta time in seconds. Delta is clamped so a backgrounded tab can't produce a huge step. It also has a `timeScale` for slow motion or pause.
-- **`Camera`** maps world coordinates to the screen through an affine `Matrix`. It supports pan, zoom-at-cursor, fit-to-bounds and visible-bounds queries, and handles `devicePixelRatio` for sharp rendering on HiDPI screens.
-- **`Input`** uses polling. DOM events only record state, and game code reads it inside `update()`. It provides `isDown` / `wasPressed` / `wasReleased` for keys and mouse buttons, mouse delta, and normalised wheel delta. `endFrame()` clears the per-frame flags.
-- **Debug tools:** a smoothed FPS counter with frame time and worst frame, a live stats overlay (`F3`), an adaptive infinite grid with world axes, and a geometry debug view (`B`) that shows envelopes, vertices and bounding boxes.
-
-### Week 2: Geometry library (`src/math/`, `src/primitives/`)
-
-| Module | What it does |
-| --- | --- |
-| `utils.js` | `lerp`, `inverseLerp`, `clamp`, `snap`, segment–segment and line–line intersection (with parameters along both), bounding-box overlap |
-| `Point` | Vector maths: add, subtract, scale, dot, cross, length, normalise, perpendicular, angle, distance, rotate (around any pivot), translate by angle |
-| `Segment` | Length, direction, projection, distance to point, intersection, parallel offset, undirected equality |
-| `Polygon` | Point containment (ray casting), polygon–polygon intersection, area, centroid, matrix transform, and **union outline** (break edges at crossings, keep the outer pieces) |
-| `Matrix` | Immutable 2D affine transform: translate, rotate, rotate around a pivot, scale, multiply, invert, apply to points or set on a canvas |
-| `Envelope` | Capsule polygon around a segment: the surface of a road |
-
-Every function has a **visual test** in `tests/visual/`. Each card is interactive and checks an invariant live, so a regression shows up as ✗:
-
-![Visual tests](docs/screenshot-visual-tests.png)
-
-### Week 3: Road graph (`src/graph/`)
-
-```
-Point ───── Segment ───── Point
-                          │
-                          │
-                        Point
-```
-
-- **`Graph`** stores nodes as `Point`s and edges as `Segment`s. Edges reference the node instances themselves, so moving a node moves every connected road. It rejects duplicate nodes and edges (in either direction). Removing a node removes its edges. It also supports splitting an edge, nearest-node and nearest-edge picking, and JSON serialisation. A `version` counter tells consumers when to rebuild.
-- **`GraphEditor`** builds the network with the mouse: place, connect, drag, split and delete. It has optional grid snapping.
-- **Persistence:** the network autosaves to `localStorage`, and you can export or import it as JSON.
-
-### Week 4: Road generation (`src/road/`)
-
-Each edge carries `lanes` and `oneWay`. `RoadNetwork` turns the graph into road geometry and only rebuilds when the graph's version changes:
-
-1. **Surface:** each edge gets an `Envelope` that is `lanes × laneWidth` wide, with rounded caps so roads blend at shared nodes.
-2. **Borders:** the outline of the **union** of all envelopes. Connected roads become one surface with no internal edges, however many roads meet at a node.
-3. **Lane layout:** traffic drives on the right. Forward lanes (p1 → p2) sit right of the skeleton and backward lanes sit left; an odd lane count gives the extra lane to the forward direction. One-way roads put every lane forward and have no centre line.
-4. **Markings:** a double yellow centre line separates the two directions, and dashed white lines separate lanes going the same way.
-   - At **junctions**, markings are clipped where they enter another road's surface.
-   - Through **simple bends** (a degree-2 node with the same lane layout), markings are mitred so they join without a gap.
-5. **Direction arrows:** each lane gets arrows at regular intervals. They are placed by transforming an arrow template polygon with a `Matrix`.
-6. **Kerb fillets** (added in Phase 5): where two roads meet at an angle, the sharp inside corner is rounded with a circular kerb (tangent length 2.5 lane widths, about 8 m). The patch is merged into the road surface. Without it, no car can turn right out of a 3.3 m lane without clipping the corner.
-
-## Phase 2: cars
-
-| Week | Goal | Status |
-| --- | --- | --- |
-| 5 | **Basic car:** position, rotation, speed, acceleration, braking, reverse, friction, steering, keyboard controls | ✅ |
-| 6 | **Better physics:** wheelbase, steering limits, realistic turning radius, separate acceleration and braking strengths, road friction | ✅ |
-| 7 | **Collision system:** cars as polygons, car–road and car–car collisions, collision debug view | ✅ |
-| 8 | **Traffic vehicles:** non-AI vehicles on routes, following distance, braking, basic obstacle avoidance | ✅ |
-
-![Driving with the HUD](docs/screenshot-drive.png)
-
-Physics, collisions and traffic are DOM-free like the Phase 1 modules. `Simulation` runs the whole thing headless, which is how the unit tests drive cars into walls and run a minute of traffic.
-
-### Units
-
-Physics is written in metres and seconds, then converted once (`src/car/units.js`). A 22-unit lane is 3.3 m wide, so 1 m ≈ 6.67 world units. The car is a 4.4 × 1.8 m hatchback with a 2.7 m wheelbase. The HUD shows real units: km/h, metres and g.
-
-### Week 5: basic car (`src/car/`)
-
-- **`Car`** holds a physics state (position, heading, signed speed, steering angle), its parameters and an `input` object. Anything can drive a car by writing `car.input = { forward, back, steer, handbrake }`: the keyboard does it now, traffic drivers do it too, and a later AI can do the same.
-- **`stepBasic()`** is the simple model. Throttle and brake change the speed, friction slows the car without reversing it, `back` reverses once stopped, and steering turns the car at a constant rate.
-- That constant turn rate is why the basic car feels like "moving a rectangle": it can spin while barely moving. Press `M` to switch back to it and compare.
-- **`KeyboardControls`**: `↑`/`W` throttle, `↓`/`S` brake then reverse, `←→`/`A D` steer, `Space` handbrake.
-
-### Week 6: better physics (`stepRealistic()`)
-
-The car is a **kinematic bicycle model**, measured at the centre of the car:
-
-```
-slip β  = atan(½ · tan δ)
-yaw ω   = v · cos β · tan δ / L          L = wheelbase, δ = front wheel angle
-turning radius (rear axle) R = L / tan δ
-```
-
-- **Steering limits.** The wheels move towards the target at a limited rate (110°/s), and centre faster (220°/s). The steering lock shrinks with speed: δmax = 35° / (1 + v / 15 m/s). That gives full lock when parking and stability on fast roads.
-- **Separate strengths.** The engine gives 3.5 m/s², falling off towards top speed, plus aerodynamic drag. Brakes give 9 m/s², reverse gives 2.5 m/s² and is capped at 20 km/h, and the handbrake locks the rear wheels.
-- **Road friction.** Every surface has a tyre grip coefficient μ (and rolling resistance). μ·g caps braking, traction and lateral acceleration:
-
-  | Surface | μ |
-  | --- | --- |
-  | Dry asphalt | 0.9 |
-  | Wet asphalt | 0.55 |
-  | Icy asphalt | 0.15 |
-  | Grass (off road) | 0.45 |
-
-- **Grip limit.** Past the grip limit the car understeers: it turns as tightly as the tyres allow and no more, and leaves **skid marks**. The same happens under hard braking.
-- `Y` cycles the road between dry, wet and icy.
-
-The tests check the model against its own equations. At low speed the car drives a circle of radius √((L/tan δ)² + (L/2)²) within 3%. It stops within the braking distance v²/2a that the grip allows. Lateral acceleration never exceeds μg.
-
-### Week 7: collision system (`src/collision/`)
-
-![Collision debug view](docs/screenshot-collisions.png)
-
-- **Shapes.** Every car is a rectangle `Polygon` from its pose. The road edge is the Phase 1 **border**: the outline of the union of all road surfaces, as line segments.
-- **Broad phase.** Border segments go into a **spatial hash** (uniform grid). A car only tests the segments in the cells its bounding box touches. Car pairs are pre-filtered by distance and bounding box.
-- **Narrow phase.** The **Separating Axis Theorem** (`sat.js`) works for convex polygons and for segments, which it treats as two-point shapes. It returns the minimum translation vector: a unit normal and a depth.
-- **Response.**
-  - The car is pushed out along the normal, and the velocity component into the wall is reflected with restitution 0.2.
-  - Coulomb friction acts on the sliding part.
-  - Cars only move along their heading, so the car is also turned slightly towards the direction it is deflected in. It scrapes along a wall instead of grinding to a halt.
-  - Car–car contacts separate both cars and exchange an equal-mass inelastic impulse.
-- **No tunnelling.** Physics runs in **substeps** small enough that no car moves more than 0.5 m per step, so a fast car can't skip over a thin border between frames. A unit test drives at full throttle into the border from four angles with 100 ms frames.
-- **Debug view (`C`).** It shows:
-  - every car's polygon: green when clear, red when hit;
-  - the spatial hash cells around the player, and the border segments it is tested against (cyan);
-  - contacts (red segment + normal arrow) and car–car normals (orange). They fade out over 0.6 s so one-frame hits are visible.
-- **Other tools.** `N` turns on ghost mode (the player ignores collisions). The HUD counts collisions, and a scrape counts once.
-
-### Week 8: traffic vehicles (`src/traffic/`)
-
-![Traffic with the routes view](docs/screenshot-traffic.png)
-
-Traffic is **not AI**. Each vehicle gets a planned route and a rule-based driver that only touches the pedals and steering wheel, so traffic obeys exactly the same physics as the player.
-
-| Module | What it does |
-| --- | --- |
-| `RoutePlanner` | Builds a directed road graph that respects one-way roads. A route is a list of `{ road, dir }` steps. Routes are planned 10 steps ahead with a seeded RNG and extended as the car drives. There are no U-turns: a 2-lane road is narrower than a car's turning circle, so a dead end is where a route ends and the car fades out. |
-| `buildPath()` | Turns a route into a lane-accurate `Path`: lane centre lines (right-hand traffic, lane counted from the kerb) joined by **circular fillets** at nodes. Each arc's radius is the largest that keeps the car clear of the junction's inner corner and stays near its lane, but never tighter than the car's turning circle. |
-| `Path` | A polyline parameterised by arc length `s`. It supports point and tangent at `s`, signed curvature, and projection with a signed lateral offset. Progress, look-ahead and "is that car in my lane?" all become 1D questions. |
-| `TrafficDriver` | **Steering:** a Stanley controller at the front axle (heading error + cross-track error + curvature feed-forward). **Speed:** the Intelligent Driver Model. **Perception:** a lane corridor ahead. **Avoidance:** lane changes. |
-| `TrafficManager` | Spawns vehicles on random lanes with varied size, colour, desired speed (38–58 km/h) and following time (1.1–1.8 s). It replaces vehicles whose route ends. |
-
-- **Following distance and braking (IDM):** a = a<sub>max</sub> · [1 − (v/v₀)⁴ − (s\*/s)²], where s\* = s₀ + vT + vΔv / 2√(ab). The desired speed v₀ also drops ahead of curves, using a comfortable lateral acceleration (2.2 m/s²) and a braking-distance profile.
-- **Leader detection:**
-  - Another car counts if its centre is in the lane corridor, or any of its corners is in this car's swept width.
-  - The car also checks where every nearby car will be in 1.2 s, so it yields to vehicles about to cross its path at junctions.
-  - Two cars waiting for each other are resolved by id. Patience runs out after 6 s, and a car stuck for 12 s leaves.
-- **Basic obstacle avoidance.** A car stuck behind a slow or stopped vehicle for more than 1.2 s moves into a free adjacent lane going the same way. Its target slides sideways smoothly, then the route is rebuilt in the new lane.
-- **Routes view (`X`).** It shows each vehicle's route (blue), its steering point, its leader (red, or dashed orange for a predicted crossing) and lane changes (purple dot).
-- **Edge collisions for traffic.** Traffic follows its lanes but isn't blocked by road borders: on a 2-lane road a car can't always keep its whole body inside the border at a tight corner. The player always is. Traffic does collide with cars, and the demo-map test runs a minute of dense traffic with **zero** collisions.
-- **Changing the network.** Traffic re-plans whenever you edit the network. `T` toggles traffic and `[` / `]` change the number of vehicles.
-
-## Phase 3: sensors
-
-| Week | Goal | Status |
-| --- | --- | --- |
-| 9 | **Ray sensors:** configurable raycasting against road boundaries and vehicles, every ray drawn | ✅ |
-| 10 | **Simulated LiDAR:** many more rays, distance measurements, point-cloud view | ✅ |
-| 11 | **Radar, GPS and IMU:** radar distance and relative velocity, GPS position and heading, IMU acceleration and rotation; one standard sensor API | ✅ |
-| 12 | **Sensor imperfections:** configurable noise, latency, limited range, dropped measurements and sensor failure | ✅ |
-
-![Sensors on the player car](docs/screenshot-sensors.png)
-
-Press `I` to open the sensor panel and draw every sensor on the map. The sensors are mounted on the player's car, which a later phase will turn into the autonomous car.
-
-### One sensor API (`src/sensors/sensor.js`)
-
-Every sensor extends `Sensor` and is used the same way:
-
-```js
-const radar = sim.sensors.read('radar');
-// { sensor: 'radar', type: 'radar', time, receivedAt, age, data: { targets: [...] } }
-sim.sensors.readAll(); // { rays, lidar, radar, gps, imu }
-```
-
-- **Timing.** A sensor samples the world at its own rate (rays 30 Hz, LiDAR packets 40 Hz, radar 20 Hz, GPS 5 Hz, IMU 100 Hz; never faster than the frame rate). `time` is when the world was sampled and `receivedAt` is when the reading arrives. Consumers only ever see **delivered** readings.
-- **Units.** All data is metric: metres, m/s, m/s² and radians in the world frame (0 = +x, clockwise on screen). That is the same convention the car physics uses.
-- **Subclasses.** A new sensor implements `measure(env)` (the ideal reading from ground truth) and `degrade(data, imperfections)` (the same reading after noise, range limit and drops). The base class handles rate, latency, whole-reading drop-outs and failure modes.
-- **Shared ray casting.** `RayCaster` collects the road-border segments in range from the spatial hash (and nearby vehicles) once. It can then cast hundreds of rays for a LiDAR packet.
-
-### Week 9: ray sensor (`raySensor.js`)
-
-```
-      \  |  /
-        \ | /
-         CAR
-```
-
-- `rayCount` rays fanned over `spread` (a 360° ring doesn't repeat its first ray), each up to `range` metres. Each ray reports the distance to the first road border or vehicle and what it hit.
-- **On the map:** yellow up to the hit, black beyond it; an orange dot marks a road edge and a red dot a vehicle.
-- **In the panel:** sliders change the ray count (1–41), spread (10–360°) and range (5–60 m) live.
-
-### Week 10: simulated LiDAR (`lidar.js`)
-
-- **Spinning beam.** A single beam spins at 5/10/20 Hz and fires 180–1440 times per turn (360 by default). Like a real unit it **streams packets**, each a slice of the turn. A scan is therefore smeared over the rotation: the first points of a turn are up to 100 ms older than the last.
-- **Readings.** `read('lidar')` returns the last full revolution, assembled from the packets. Each point has its angle (car frame), its distance, what it hit, and its world position.
-- **Point cloud.** Points are drawn coloured by distance (warm = near, cool = far) and fade with age within the turn. The sweeping beam is drawn too.
-
-### Week 11: radar, GPS, IMU (`radar.js`, `gps.js`, `imu.js`)
-
-| Sensor | Reports | Model |
-| --- | --- | --- |
-| Radar | `targets: [{ id, range, bearing, rangeRate }]` | 40° forward cone, 80 m. Sees vehicles (not kerbs) at the nearest point of their body. **Range rate** is the relative velocity along the line of sight (negative = closing). Targets hidden behind another vehicle or a road edge are not reported. |
-| GPS | `x, y, heading, speed, accuracy` | Position error = slowly **drifting** bias (Gauss–Markov, 30 s correlation) + white noise, so the fix wanders like a real receiver's instead of jittering. Heading is course over ground, so it is `null` below 1 m/s. `accuracy` is the receiver's own 1σ estimate. |
-| IMU | `ax, ay, yawRate` | Longitudinal and lateral acceleration in the car frame, plus yaw rate. Each axis has white noise plus a **bias** fixed at power-on, which is what makes dead reckoning drift. |
-
-- **On the map:** the radar's cone, with range-rate arrows on its targets; the GPS fix, its trail and 95 % circle; and the IMU's acceleration vector.
-- **The panel's car-centred view** plots what the sensors report, heading up. That includes the LiDAR cloud, the rays and radar targets (labelled with range rate), the GPS fix relative to the true position (its error), and a g-circle for the IMU.
-
-### Week 12: sensor imperfections (`imperfections.js`)
-
-![Degraded sensors](docs/screenshot-sensors-degraded.png)
-
-Each sensor has a **datasheet** (`spec`): its 1σ noise per quantity, typical latency and drop-out rate. Global knobs are multiples of those values, so "noise ×2" doubles every sensor's *own* noise.
-
-| Imperfection | Effect |
-| --- | --- |
-| Noise | Gaussian noise on every quantity (range, bearing, range rate, position, heading, acceleration…), plus the GPS drift and IMU bias. |
-| Latency | Readings are queued and delivered `latency` seconds after sampling, so the car sees the past. On the map the ray fan visibly lags behind a fast car. |
-| Limited range | The range scale shrinks every sensor's reach. |
-| Dropped measurements | GPS and IMU lose whole readings. Rays, LiDAR points and radar targets are dropped one by one. |
-| Failure | Per sensor: `dead` (stops reporting; the last reading just grows old), `stuck` (keeps sending the same frozen values with *fresh* timestamps, which is the hard case to detect), `intermittent` (frequent short drop-outs), plus random dead spells per minute for every sensor. |
-
-- **Presets** (`U` cycles them):
-  - **Perfect:** everything off.
-  - **Realistic:** datasheet values.
-  - **Degraded:** 3× noise, 4× latency, 5× drop-outs, 60 % range, 2 random failures a minute and an intermittent GPS.
-- **Panel controls:** sliders fine-tune each knob, and each sensor row has its own failure selector.
-- **Status badges** are ground truth for debugging: `ok`, `failed`, `stuck`, `stale`, `off`. A consumer of `read()` only sees what a real car would: readings, their timestamps and their age.
-- **Reproducible noise.** All noise comes from seeded RNGs, so the tests replay exactly.
-
-## Phase 4: first self-driving AI
-
-| Week | Goal | Status |
-| --- | --- | --- |
-| 13 | **Neural network from scratch:** neurons, layers, weights, biases, activation functions, `feedForward()`, serialisation; no TensorFlow | ✅ |
-| 14 | **Brain ↔ car:** sensor readings → network inputs, network outputs → vehicle controls | ✅ |
-| 15 | **Population training:** 100–500 cars at once, each with a slightly different brain; crashed cars are removed and the best driver is identified | ✅ |
-| 16 | **Genetic algorithm:** fitness, elitism, mutation, crossover, tournament selection, regeneration; champion saved to localStorage | ✅ |
-
-![Training a population](docs/screenshot-training.png)
-
-Press `4` to train (Phase 5 turned the training panel into a full dashboard, see below). A trained champion can then drive your car: press `K` (autopilot).
-
-### Week 13: neural network (`src/ai/network.js`, `activations.js`)
-
-```
-Sensors → Inputs → Hidden layer → Outputs → Throttle / Brake / Steering
-```
-
-- **`Layer`.** A set of neurons, each connected to every value of the previous layer. Neuron *j* computes `activation(Σ inputs[i]·weights[j][i] + biases[j])`.
-- **`NeuralNetwork([8, 8, 3])`.** A list of layers, built from layer sizes with inputs first. Hidden layers and the output layer use `tanh` by default. `sigmoid`, `relu`, `leakyRelu`, `step` and `linear` are available by name, so networks serialise to plain JSON.
-- **Genome.** `feedForward()`, `clone()`, `toJSON()` / `fromJSON()`, and `toGenome()` / `setGenome()`. The genome is every weight and bias as one flat array, which is what the genetic algorithm works on.
-- **No gradient descent.** Weights are found by evolution, so the network only needs to run forward.
-
-### Week 14: connecting the brain to the car (`brain.js`)
-
-| | Values |
-| --- | --- |
-| Inputs (8) | 7 rays over 150°, 20 m: `0` = nothing in range … `1` = obstacle touching; plus own speed (wheel odometry) scaled to ±1 |
-| Hidden (8) | `tanh` |
-| Outputs (3) | throttle = max(0, out₀), brake = max(0, out₁), steer = out₂ (all `tanh`); reverse disabled |
-
-- **Standard readings only.** The brain consumes a **standard Phase 3 sensor reading**, so it never sees the world directly.
-- **The same brain everywhere.** It drives a training car with a perfect sensor, or your car through its own sensor suite, including whatever noise, latency or failure you set in the sensor panel.
-- **Matching sensor layout.** A brain carries the ray layout it was trained with, and turning on the autopilot sets your car's ray sensor to match.
-- **Week 14's goal.** With no champion yet, `K` gives your car a random brain: *one terrible autonomous car that can technically drive itself*.
-
-### Week 15: population training (`trainer.js`)
-
-- **Start position.** Every generation spawns the whole population at the same place: by default the right-hand lane at the start of the longest run of road without sharp turns, or optionally your car's position.
-- **Ghost cars.** Cars don't collide with each other. Each has its own brain and its own ray sensor, and can crash into road borders and traffic.
-- **Removal.** A car is removed when it **crashes**, or when it **stalls** (no new road for 4 s). A generation ends when every car is out or its time limit (40 s) is up.
-- **Fitness = metres of distinct road driven** (`coverage.js`):
-  - Every road skeleton is cut into 2 m bins, and a car scores each bin it reaches for the first time.
-  - Circling or wiggling earns nothing, while following the road earns ~1 m per metre.
-  - It works on any network you build, with no hand-made track or checkpoints.
-- **The leader.** The best live car is drawn in green with its rays; the rest are faint. The panel draws the leader's network live: inputs on the left, blue/orange connections for positive/negative weights, and each neuron filled with its activation.
-
-### Week 16: genetic algorithm (`genetics.js`)
-
-| Step | Implementation (defaults; GA settings can change while training) |
-| --- | --- |
-| Fitness | metres of distinct road (above) |
-| Elitism | the best 2 genomes are copied unchanged. The simulation is deterministic, so they replay the same score, and the best fitness never goes down |
-| Tournament selection | pick 4 at random, keep the fittest |
-| Crossover | uniform: each gene from either parent (70 % of children; the rest copy one parent) |
-| Mutation | each gene with probability 0.1 gets Gaussian noise (σ 0.3) |
-| Regeneration | elites + children fill the next population |
-
-- **The champion.** The best brain seen so far is the **champion**. It is saved to `localStorage` automatically whenever it improves, so it survives reloads. A new run continues from it (the champion plus mutated copies) unless you untick that option.
-- **Training panel.** It shows live stats (generation, alive / crashed / stalled, leader and champion fitness) and a best-and-average fitness chart with hover tooltips.
-- **Milestone #2.** The unit test trains 60 cars for 10 generations on the demo map. The champion must drive more than 250 m (the avenue plus the bend to its far end is ~285 m), and the population average must at least triple. In practice the best car covers the whole run by generation 4 or 5.
-
-**What it can't do yet:**
-- The brain has no route or destination input, so at a junction it goes wherever its reflexes take it.
-- It follows the road, but doesn't keep to a lane.
-
-## Phase 5: training system
-
-| Week | Goal | Status |
-| --- | --- | --- |
-| 17 | **Better fitness:** reward road progress, lane position, smooth steering, safe speed and reaching destinations; penalise crashes, needless reversing, leaving lanes and dangerous behaviour | ✅ |
-| 18 | **Training curriculum:** Straight → Curves → Sharp turns → Obstacles → Traffic → Intersections | ✅ |
-| 19 | **Training dashboard:** generation, population, best and average fitness, mutation rate, survival, training time; fitness plotted over generations | ✅ |
-| 20 | **Fast simulation:** 1×, 2×, 5×, 10×, 50× and maximum speed; rendering can be switched off; training runs in a Web Worker | ✅ |
-
-![Training dashboard](docs/screenshot-dashboard.png)
-
-Press `4`, pick **Curriculum** (or one course, or *Your map*) and **Start**. `[` / `]` change the speed, `Z` turns rendering off and `P` pauses.
-
-### Routes and navigation (`src/training/navigator.js`)
-
-To follow a route through junctions, a brain needs to know where the route goes. Phase 5 brains get two extra inputs from a `Navigator` that tracks the car along its route's lane path:
-
-| Input | Meaning |
-| --- | --- |
-| `route` | sin(bearing to the route 12 m ahead): which way the road you should take bends |
-| `lane` | offset from the nearest lane centre going your way, ±1 = half a lane |
-
-The network becomes 10-8-3 (7 rays + speed + 2 navigation inputs). On your map, the autopilot plans a random route from where the car is and draws it as a green dashed line. It localises with the **GPS reading**, so sensor imperfections affect it.
-
-### Week 17: better fitness (`fitness.js`)
-
-A `FitnessEvaluator` per car scores every step and keeps each term separately. The dashboard shows the leader's breakdown as bars.
-
-| Reward / penalty | Default weight |
-| --- | --- |
-| **Progress:** furthest point along the route | +1 per metre |
-| **Destination:** arriving (within 6 m of the end) | +150, + 2 per second left |
-| **Lane position:** distance from the nearest lane centre beyond 0.3 m | −2 per metre·second |
-| **Leaving lanes:** not in any lane going your way (oncoming lane, off route) | −6 per second |
-| **Steering smoothness:** change of steering command | −0.4 per unit of change |
-| **Safe speed:** above the course speed limit | −3 per (m/s)·second |
-| **Unnecessary reversing:** reversing with nothing within 2 m ahead | −5 per second |
-| **Danger:** an obstacle within 1.5 m, or under 1 s to impact | −4 per second |
-| **Crash** | −30 once |
-| **Stalled / lost:** no progress for 5 s, or far off the route | −20 once |
-
-- **Weights are editable** in the dashboard settings.
-- **Why stalling costs points:** without that penalty the population learned to stop safely in front of every sharp corner. Stopping scored better than trying the turn and sometimes crashing.
-
-### Week 18: training curriculum (`courses.js`, `trainingWorld.js`, `session.js`)
-
-| # | Course | What it teaches |
-| --- | --- | --- |
-| 1 | Straight | 260 m two-lane road: accelerate, stay in lane |
-| 2 | Curves | Gentle S-bends: smooth steering |
-| 3 | Sharp turns | 90° corners and a tight double bend: brake before turning |
-| 4 | Obstacles | One-way street with parked cars in alternating lanes: change lanes |
-| 5 | Traffic | Busy four-lane road, traffic both ways: keep your distance or overtake |
-| 6 | Intersections | 3 × 3 grid, route turns right, left and goes straight: follow the route |
-
-- **Self-contained courses.** Each course is a small road graph with its own route, speed limit, time limit, parked cars and traffic, built by a `TrainingWorld` (your map is a `TrainingWorld` too). Courses are deterministic, so the page and the worker build identical ones from an id.
-- **Fair traffic.** Traffic is reset with the same seed every generation, so every brain faces the same situation and elites still replay their score.
-- **Advancing.** `TrainingSession` moves on when **5 % of the population reaches the destination three generations in a row** (adjustable). The population carries over to the next course, and the dashboard marks every course change on the charts.
-- **Champions across courses.** A champion from a harder course beats a higher score on an easier one.
-- **Drivability check.** A unit test drives every course with an ideal controller to prove it can be done without touching a kerb. That test is what uncovered the missing kerb radii at junctions.
-- **How far it gets.** In a headless run of 150 cars, Straight, Curves and Sharp turns were passed within ~40 generations, and the Obstacles destination was reached by generation 48.
-
-### Week 19: training dashboard (`ui/trainingDashboard.js`, `ui/lineChart.js`)
-
-- **Tiles:** generation (and its clock), population (and how many are alive), best and average fitness of the last generation (with the champion), mutation rate, survival (and arrivals), wall-clock training time, simulated time, and speed (× real time and steps per second).
-- **Curriculum progress:** done ✓, current course, its description and the pass streak.
-- **Charts over generations:**
-  - best and average fitness;
-  - survival and arrival rates on a separate 0–100 % chart (one axis per chart);
-  - course changes drawn as markers;
-  - hover for each generation's values.
-- **Leader view:** its fitness breakdown and live network, including hidden-layer activations.
-- **Champion and settings:** the champion (saved to localStorage), and all settings: population, hidden neurons, pass rate, GA parameters, sensor noise, reversing, fitness weights.
-
-### Week 20: fast simulation (`speed.js`, `runner.js`, `worker.js`)
-
-- **Fixed steps.** Training always advances in fixed 1/60 s steps, so results don't depend on the frame rate.
-  - **1×, 2×, 5×, 10×, 50×:** that many simulated seconds per real second. A backlog (from a hidden tab) is dropped rather than replayed in one burst.
-  - **Max:** as many steps as fit in each 40 ms slice.
-- **Web Worker (default).** The whole training stack is DOM-free, so `worker.js` runs the same `TrainingSession`. The page receives a ~15 Hz snapshot (agent poses in a transferable `Float32Array`, leader brain, stats, history) and only draws. Untick it to run on the main thread instead: `LocalRunner` steps the session inside the render loop with a frame budget.
-- **Rendering off (`Z`).** Skips drawing the world entirely while the dashboard keeps updating.
-- **Throughput.** About 3,000–6,000 steps/s with 150 cars in a worker (50–100× real time), against roughly 900–2,400 steps/s on the main thread while it also renders.
-
-![Rendering off](docs/screenshot-render-off.png)
-
-**Milestone #3: an actual AI-training environment.** You can pick what to train on, choose how fast, watch or not, measure it, and keep the best brain.
-
-## Phase 6: city simulation
-
-| Week | Goal | Status |
-| --- | --- | --- |
-| 21 | **Intersections:** T-junctions, four-way intersections, turning lanes, lane connections, yielding rules, intersection occupancy | ✅ |
-| 22 | **Traffic lights and signs:** red/yellow/green lights, stop signs, yield signs, speed-limit signs, pedestrian crossings, vehicle responses | ✅ |
-| 23 | **Multi-lane roads:** lane IDs, lane centrelines, lane changes, overtaking, merging | ✅ |
-| 24 | **Highway systems:** ramps, exits, high-speed roads, merging traffic | ✅ |
-
-![A signalised junction](docs/screenshot-junction.png)
-
-The default map is now a small city (the **Demo** button switches between it and the classic map). It has:
-
-- a grid of two-lane streets and four-lane avenues;
-- a one-way street, a 30 km/h zone and three zebra crossings;
-- a two-carriageway highway (110 km/h) with exits, on-ramps and acceleration lanes;
-- a frontage road, so no ramp crosses the highway at grade.
-
-Everything in `src/city/` is DOM-free and built from the road network by `City`. `Simulation` rebuilds it whenever you edit the map.
-
-### Week 21: junctions (`city/junction.js`)
-
-- **Kinds.** Every node becomes a `Junction` of one of these kinds:
-  - **continuation:** two roads, possibly with a lane drop or gain;
-  - **T** and **cross** (four-way), or **multi** (five or more);
-  - **merge:** one-way roads joining, e.g. an on-ramp;
-  - **diverge:** a one-way road splitting, e.g. an exit.
-- **Lane connections.** Each junction lists its *movements*: in-arm and lane → out-arm and lane, with a turn type. Lanes are numbered from the right-hand kerb.
-  - **Turning lanes:** right turns only from the right lane and left turns only from the left lane. With three or more lanes the left lane is a dedicated left-turn lane. Turn arrows are painted on every approach lane.
-  - **Merges** stack incoming lanes from the right: the ramp feeds the acceleration lane and the highway lanes shift left.
-  - **Diverges** only let the right-hand lane take the exit.
-  - **Lane drops** on freeways happen on the right (acceleration lanes end), on streets on the left.
-  - Hairpins sharper than 135° aren't drivable movements.
-- **Conflicts.** Two movements conflict when their paths through the box come within 2.4 m, sampled every 0.5 m along both paths.
-- **Occupancy.** A car must be *granted* its movement before entering the box, and no two granted movements may conflict. A car reserves its movement once its braking distance reaches the stop line, and releases it once the junction is behind it and it is clear of the box.
-- **Yielding rules**, per approach:
-
-  | Rule | Behaviour |
-  | --- | --- |
-  | Priority road | Go if the box is free. Left turns yield to the oncoming main road. |
-  | Yield sign | Give way to conflicting priority traffic arriving within 4 s |
-  | Stop sign | Full stop at the line for 0.6 s, then as yield. At an **all-way stop**, first come, first served. |
-  | Priority to the right | Give way to conflicting traffic from the right (with a deadlock breaker) |
-  | Lights | See Week 22 |
-
-- **Automatic controls:**
-  - lights where avenues cross;
-  - all-way stops where streets cross;
-  - a stop sign on the side road of a T on an avenue, a yield sign otherwise;
-  - free flow at merges and diverges.
-
-  In **Roads** mode, click a junction node to override its control (lights, all-way stop, stop or yield on the minor road, priority to the right). The choice is saved with the map.
-
-### Week 22: lights and signs (`city/signals.js`, `city/crossings.js`)
-
-- **Signals.** A fixed-time `SignalController` groups opposite approaches into phases: green 12 s (16 s on the main road), yellow 3 s, all-red 1.5 s, with offsets so neighbouring lights aren't in step.
-  - Left turns on green are *permitted*: they yield to oncoming traffic, and a left-turner waiting at the line clears the junction during the yellow and all-red.
-  - At yellow a car only goes if it can no longer stop comfortably.
-- **Signs and markings.** Stop signs (octagon, solid line), yield signs (triangle, dashed line) and signal heads stand on the kerb of each approach.
-- **Speed limits.** Every road has a limit: its own, or its type's default (street 50, avenue 60, ramp 60, highway 110). Signs are drawn where it matters. Each traffic driver aims for 92–108 % of the limit and slows *before* entering a slower road.
-- **Pedestrian crossings.** A road can have a zebra crossing (Roads mode → *Pedestrian crossing*). Pedestrians walk across every few seconds, and cars stop before the crossing while anyone is on it, unless they are already too close to stop.
-- **Your car.** The HUD shows the current speed limit (red when you are more than 10 % over). It counts red lights you run and seconds spent speeding.
-
-### Week 23: multi-lane roads (`city/city.js`, `traffic/laneIndex.js`, `traffic/trafficDriver.js`)
-
-![Lane IDs and connections](docs/screenshot-lanes.png)
-
-- **The lane graph.** Every lane has an ID (`L12F0`: road 12, forward direction, lane 0 from the right), a centreline, left and right neighbours, a speed limit and its successors through the next junction. The **Lanes** view (`L`) draws the IDs, centrelines and connections, coloured by turn.
-- **Lane index.** Rebuilt every frame: each car (traffic, and the player located by geometry) is placed on a carriageway with its lane and position. Finding the leader and follower in any lane is then a sorted-list lookup.
-- **Routes and lanes.** Paths follow the lane connections across junctions (`RoutePlanner.buildPath` accepts a lane per step).
-- **Lane changes.** A lane change steers to a sideways offset that grows only while the car rolls forward. It **aborts** and steers back if someone moves alongside in the target lane.
-  - **Mandatory:** the next turn, exit or lane drop needs another lane. The closer the end, the smaller the gap the driver accepts. If it still can't merge it waits at the end of the lane. If it reaches the stop line in a lane that can't make its turn, it **re-routes** and takes a turn that lane can make.
-  - **Discretionary (MOBIL).** Change when the acceleration gained in the other lane (from IDM against that lane's leader) beats a threshold and the new follower wouldn't have to brake harder than 3 m/s². A bias towards the right gives **overtaking** followed by **keeping right**.
-- **Merging.** Lane drops and the highway acceleration lanes force a mandatory merge with gap acceptance.
-
-### Week 24: highways (`road/roadTypes.js`, `data/city.js`)
-
-![Highway interchange](docs/screenshot-highway.png)
-
-- **Road types.** Roads have a type: **street**, **highway** or **ramp**. Highways and ramps get darker asphalt, solid edge lines, longer lane dashes and higher default limits. Change it in Roads mode.
-- **Grade separation.** Highways never meet streets at grade, only through ramps:
-  - a **diverge** (exit from the right lane);
-  - the ramp to a signalised junction with the avenue;
-  - an on-ramp **merge** into an acceleration lane that ends 120 m later, so ramp traffic must find a gap.
-- **Ramp geometry.** Ramps join at 25–35°. A first version at 70° made turning arcs swing into the next lane.
-
-### Making it actually work
-
-The checks below run 40 to 70 cars for several minutes on the city map, and each problem they found was fixed:
-
-| Problem | Fix |
-| --- | --- |
-| A car stopped at its line got its reservation released in the same frame (it was already "far" from the centre) | Release only once the junction is behind the car |
-| Driving through two junctions overwrote the first reservation | Track a set of held junctions |
-| Straight movements never conflicted (a long segment with no points inside the box) | Resample every movement every 0.5 m |
-| The Phase 2 deadlock breaker made queued cars drive into the car ahead at red lights | Waiting at a light, sign or crossing (or behind someone who is) isn't stuck; the breaker only fires on real waiting cycles |
-| A lane change completed while standing still, so the car was "in" a lane it wasn't in | Sideways progress scales with forward speed |
-| Left turns across a continuous oncoming stream waited forever | Clear on yellow, as real drivers do |
-
-The regression test runs 40 cars on the city for a minute with **zero collisions**, nobody stuck, highway speeds above 80 km/h, and mandatory, overtaking and keep-right lane changes all happening.
-
-**Milestone #4: a small functioning city traffic simulation.**
-
-## Phase 7: navigation
-
-| Week | Goal | Status |
-| --- | --- | --- |
-| 25 | **GPS road graph:** the city as a navigable graph, lanes associated with graph edges | ✅ |
-| 26 | **Pathfinding:** Dijkstra and A*; click START and DESTINATION, get a route | ✅ |
-| 27 | **Behaviour planner:** route → "turn left" → behaviour → "move into the left lane" → controller → steering/throttle | ✅ |
-| 28 | **Trajectory planning:** short future paths, chosen on safety, speed and route requirements | ✅ |
-
-![Planning a route](docs/screenshot-nav-route.png)
-
-Press `5` (**Navigate**), click a road for **START** and another for **DESTINATION**. The route appears with turn-by-turn directions and the edges the search explored. **Drive autonomously** then hands the player's car to the autonomy stack.
-
-### Week 25: the GPS road graph (`navigation/navGraph.js`)
-
-- **Edges.** One edge per road and direction of travel, with length, speed limit, free-flow travel time, a street name (roads that continue each other straight form one street: *Avenue 1*, *Street 7*, *Highway 2*…) and the **IDs of its lanes** from the Phase 6 lane graph.
-- **Transitions** between edges come straight from the junctions' lane connections. Turn restrictions are therefore built into the graph: one-way streets, no U-turns, no hairpins, exits only from the right lane. Each transition records which lanes can make it and whether it is signal- or sign-controlled.
-- **Map matching.** `match(point, heading)` snaps a click or a GPS fix to an edge, a position along it and a lane, preferring the direction that agrees with the heading.
-
-### Week 26: pathfinding (`navigation/pathfinding.js`, `navigation/route.js`)
-
-- **Edge-based search.** The search runs over **edges**, not nodes, so turn restrictions and turn costs apply naturally. The route begins part-way along the start edge and ends part-way along the goal edge.
-  - **Dijkstra** expands in order of cost.
-  - **A\*** adds an admissible estimate: the straight-line distance (shortest), or that distance at the network's top speed (fastest).
-- **Two cost modes:**
-  - **Fastest:** travel time, plus expected waits (left turn 8 s, right 3 s, lights 10 s, stop/yield signs 5 s).
-  - **Shortest:** metres.
-- **Test result.** Over hundreds of random pairs A\* finds exactly Dijkstra's optimal cost while expanding ~30 % fewer edges. The difference grows with the size of the map. The panel shows both counts and draws A\*'s explored edges in orange.
-- **Route.** A `Route` adds what driving needs:
-  - a **lane plan**: on each edge, the lane that can make the next turn;
-  - the lane-level **reference path** (corners at least 5.5 m in radius, wider than the car's 4.7 m turning circle);
-  - **maneuvers** with their position along the path;
-  - **instructions** ("Turn right onto Street 7").
-
-### Week 27: behaviour planner (`autonomy/behaviorPlanner.js`)
-
-![Autonomous driving](docs/screenshot-nav-drive.png)
-
-```
-Route planner       "Turn right onto Street 7 in 320 m"
-      ↓
-Behaviour planner   "Move into the right lane" · "Red light: stopping"
-      ↓
-Trajectory planner  18/60 safe · chose "stop"
-      ↓
-Controller          steer 0 % · throttle 2 % · brake 0 %
-```
-
-Each frame the behaviour planner turns the route, the junction rules, crossings and the destination into a small decision: **allowed lanes, preferred lane, speed limit and stop point**.
-
-| State | When |
-| --- | --- |
-| Follow route | cruising (keep right when nothing else matters) |
-| Prepare lane change | the next turn needs another lane within 160 m: "Move into the left lane" |
-| Approach / Cross junction | its movement is granted |
-| Stop at line / Wait at line | red or yellow light, stop sign, yield, busy box, or wrong lane |
-| Yield to pedestrians | someone is on the crossing ahead |
-| Arriving / Arrived | the last 60 m, then stopped at the destination |
-
-- **Same rules as traffic.** The autonomous car asks junctions for its movement through the **same reservation system traffic uses**, as a real car could receive signal phases over V2I. Traffic respects it, and it respects traffic.
-- **Turns.** Within ~20 m of a turn it follows the reference lane exactly.
-
-### Week 28: trajectory planning (`autonomy/trajectoryPlanner.js`, `polynomials.js`, `controller.js`)
-
-- **Frenet frame.** Every 0.1 s the planner works in **Frenet coordinates** along the reference path (`s` along it, `d` sideways) and generates a small lattice of candidates over 3–5 s:
-  - **Lateral:** a quintic (minimum-jerk) `d(t)` to the centre of each allowed lane.
-  - **Longitudinal:**
-    - a quartic `s(t)` to a target speed (the limit, slower, the speed of the car ahead), with a duration long enough to stay within comfortable acceleration;
-    - a quartic that slows to a corner's speed exactly by the corner;
-    - a quintic that **stops exactly** at a point: a stop line, the destination, or behind a car.
-- **Rejected** if it accelerates or brakes too hard, is too fast for the curve at that point, turns harder than the tyres allow, leaves the allowed lanes (the whole car body, not just its centre), runs the stop point, or comes within a car's width of a perceived object's predicted position (constant-velocity prediction, three-circle footprints).
-- **Ranked by cost:** shortfall against a desired speed profile (the limit, braking for corners ahead), jerk, distance from the preferred lane, lane changes, proximity to other cars, and unnecessary stops.
-- **When nothing is safe:** take the option whose predicted conflict is furthest away (≥ 1.5 s), otherwise brake hard.
-- **Controller.** Steers along the *dense* reference path offset by the planned `d` (Stanley with curvature feed-forward). Throttle and brake track the planned speed with its acceleration as feed-forward.
-- **Perception (`autonomy/perception.js`).** Built only from the car's Phase 3 sensors:
-  - LiDAR returns that hit vehicles are clustered;
-  - radar targets are added;
-  - an alpha-beta filter tracks each object and estimates its velocity.
-
-  Localisation uses the true pose, as an HD-map localiser would provide (GPS is available as an option). A *ground truth* perception mode is there for comparison.
-
-### Milestone #5 and what it took
-
-The unit tests drive two routes across the city, one of them with 20 traffic cars, and require arrival with **zero collisions and zero red lights**. A wider sweep of 36 random routes (350 m to 2.2 km, with and without 20–30 traffic cars) arrives 36/36 with zero collisions and zero red lights.
-
-Getting there exposed one bug after another:
-
-| Problem | Fix |
-| --- | --- |
-| Starting from rest, the plan's first moments are near zero speed, so the controller "held" the car forever | Look further ahead at low speed; brake-hold only if the plan barely moves for 3 s |
-| Stop curves stretched over 9 s crawled the last metres | Stop durations scale with distance and speed |
-| Fast candidates were "too fast" at the next corner, so only crawling ones survived | Speed checked against each point's own corner speed; corner-speed candidates; cost against a speed profile |
-| Re-planning from the measured offset baked tracking errors into every plan; in tight arcs the car drifted onto the kerb | Continue laterally from the previous plan when close; through turns plan exactly along the reference lane |
-| 4.5 m corner arcs were tighter than the car can steer | 5.5 m minimum radius for routes |
-| A follower predicted to run into the car made every candidate "collide", the car braked hard and was rear-ended | Ignore objects behind in the same lane; least-bad fallback instead of emergency braking |
-| Reservations made on green let cars (and traffic) through a red that came before they reached the line | A reservation lapses when the light changes and the car can still stop |
-| The red-light counter flagged cars turning across another approach's line inside the box | Count only cars driving along that approach |
-| Perceived velocities oscillated ±4 m/s as the LiDAR sweep jittered cluster centres, so a cut-in was seen too late | Lower tracking gains; with the fix the cut-in scenario that collided now passes |
-| A traffic lane change could cut in front of the player at low speed | Traffic leaves followers 2 m + 0.8 s |
-
-## Controls
-
-| Input | Action |
-| --- | --- |
-| `W A S D` / arrows | Move camera |
-| Mouse wheel | Zoom at cursor |
-| Middle drag, or `Space` + drag | Pan |
-| `F` / `0` | Fit network / reset view |
-| `1` / `2` / `3` / `4` / `5` | Graph / Roads / Drive / Train / Navigate mode |
-
-**Graph mode**
-
-| Input | Action |
-| --- | --- |
-| Click empty space | Add a node (connected to the selected node) |
-| Click a road | Split it with a new node (`Shift` to place a free node instead) |
-| Click / drag a node | Select it, connect the selection to it, or move it |
-| Right click | Deselect, or delete the hovered node or edge |
-| `Del` / `Esc` | Delete the selected node / deselect |
-
-**Roads mode**
-
-| Input | Action |
-| --- | --- |
-| Click a road | Select it: lanes, direction, type, speed limit, crossing |
-| Click a junction node | Choose its control: lights, all-way stop, stop/yield signs, priority to the right |
-| `+` / `−` | Add / remove a lane |
-| `O` | Toggle one-way |
-| `R` | Reverse direction |
-
-**Drive mode**
-
-| Input | Action |
-| --- | --- |
-| `↑` / `W` | Throttle (brakes while reversing) |
-| `↓` / `S` | Brake, then reverse once stopped |
-| `←` `→` / `A` `D` | Steer |
-| `Space` | Handbrake |
-| `R` | Reset the car |
-| `K` | Autopilot: the champion (or a random brain) drives |
-| Mouse wheel | Zoom (the camera follows the car) |
-
-**Simulation** (any mode)
-
-| Input | Action |
-| --- | --- |
-| `T` | Traffic on / off |
-| `[` / `]` | Fewer / more vehicles (in Train mode: slower / faster) |
-| `M` | Physics model: basic (week 5) / bicycle (week 6) |
-| `Y` | Road surface: dry / wet / icy |
-| `C` | Collision debug view |
-| `L` | Lanes view: lane IDs, centrelines, connections |
-| `X` | Traffic routes view |
-| `N` | Ghost mode (player ignores collisions) |
-| `P` | Pause (in Train mode: pause training) |
-| `Z` | Train mode: rendering on / off |
-| `I` | Sensor panel + sensor views on the map |
-| `U` | Sensor imperfections: perfect / realistic / degraded |
-
-**Debug:** `F3` stats overlay · `B` geometry view · `V` graph skeleton · `G` grid snap · `Shift+G` grid · `H` help
-
-## Project structure
-
-```
-index.html              app shell (toolbar, road panel, help, overlay)
-css/style.css
-src/
-  main.js               wiring: loop → input → camera → editor → road network → simulation → render
-  engine/               loop.js · camera.js · input.js · debug.js
-  math/                 utils.js · matrix.js
-  primitives/           point.js · segment.js · polygon.js · envelope.js
-  graph/                graph.js · graphEditor.js · storage.js
-  road/                 road.js (lane layout) · roadNetwork.js (generation + rendering, kerb fillets) · roadTypes.js
-  car/                  physics.js (basic + bicycle model) · car.js · units.js · keyboardControls.js · skidMarks.js
-  collision/            sat.js · spatialHash.js · collisionWorld.js (detection + response)
-  traffic/              path.js · routePlanner.js · trafficDriver.js (Stanley + IDM + MOBIL) · trafficManager.js · laneIndex.js
-  sensors/              sensor.js (common API) · raycast.js · raySensor.js · lidar.js · radar.js · gps.js · imu.js
-                        imperfections.js · noise.js · sensorSuite.js
-  city/                 city.js (junctions, lane graph, violations, drawing) · junction.js · signals.js · crossings.js
-  navigation/           navGraph.js (GPS graph, map matching) · pathfinding.js (A*, Dijkstra) · route.js
-  autonomy/             perception.js · behaviorPlanner.js · trajectoryPlanner.js · polynomials.js · controller.js
-                        autonomousDriver.js
-  sim/simulation.js     cars, substepping, collisions, city, traffic, sensors, debug drawing
-  ai/                   network.js · activations.js · brain.js · genetics.js · trainer.js · coverage.js · championStore.js
-  training/             courses.js · trainingWorld.js · navigator.js · fitness.js · environments.js · session.js
-                        speed.js · runner.js · worker.js · trainingView.js
-  ui/                   controls.js · hud.js · sensorPanel.js · trainingDashboard.js · lineChart.js · networkView.js
-                        navigationPanel.js
-  data/                 city.js (Phase 6 city) · demo.js (classic sample network)
-tests/
-  unit/                 node:test suites: geometry, graph, roads, car physics, collisions, traffic, sensors, AI, training, city, navigation
-  visual/               interactive geometry test gallery
-```
-
-Every module under `math/`, `primitives/`, `graph/graph.js`, `road/`, `car/`, `collision/`, `traffic/`, `sensors/`, `ai/`, `training/` (except the worker glue), `city/`, `navigation/`, `autonomy/` and `sim/` is DOM-free. The unit tests run them directly in Node, and later phases can reuse them in workers.
-
-## Design notes
-
-- **World units vs pixels.** Geometry lives in world units. Editor handles are sized as `pixels / zoom`, so they stay the same size on screen at any zoom level.
-- **Rebuild on change, not every frame.** The graph's `version` counter means road geometry is regenerated only when something changes, including while you drag a node. The overlay shows the rebuild time.
-- **Bounding-box pre-filtering** keeps polygon union and marking clipping cheap, because only nearby roads are compared.
-- **One input interface for every driver.** The keyboard, traffic drivers and (later) AI all just set `car.input`. Physics doesn't know who is driving.
-- **Decide once per frame, integrate in substeps.** Drivers choose their inputs once per frame. Physics and collision resolution run in as many substeps as the fastest car needs.
-- **Deterministic traffic.** Routes, spawns and vehicle variety come from a seeded RNG, so the regression tests replay exactly.
-- **Layers talk only to their neighbours.** Route, behaviour, trajectory and controller each hand the next layer a small, inspectable object, which is what the navigation panel shows live.
-- **One session, two hosts.** Training only talks to the page through plain-data snapshots, so the main thread and a Web Worker run exactly the same code.
-- **Evolution needs determinism.** With a fixed seed and no sensor noise, a brain gets exactly the same score every time it drives. That is what makes elitism meaningful.
-- **Ground truth and perception stay separate.** Sensors read the simulation's true state, but everything downstream gets only delivered sensor readings. The next phases can't cheat by peeking at the world.
+| 1. Simulator foundation | 1–4 | Engine, geometry library, road graph editor, procedural roads |
+| 2. Cars | 5–8 | A manually drivable traffic simulator |
+| 3. Sensors | 9–12 | Rays, LiDAR, radar, GPS, IMU with imperfections |
+| 4. First self-driving AI | 13–16 | Cars learn basic road following |
+| 5. Training system | 17–20 | A real AI-training environment: fitness, curriculum, dashboard, fast simulation |
+| 6. City simulation | 21–24 | A small functioning city: junctions, signals, lanes, highway |
+| 7. Navigation | 25–28 | The autonomous car completes A → B navigation |
 
 ## Licence
 

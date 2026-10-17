@@ -13,3 +13,7 @@ jobs:
         with:
           node-version: 22
       - run: npm test
+      - name: A* and Dijkstra agree (benchmark)
+        run: npm run bench
+      - name: Reproducible training smoke run
+        run: npm run train -- configs/training/quick.json --out /tmp/quick

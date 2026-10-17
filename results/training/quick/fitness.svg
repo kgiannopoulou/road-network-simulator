@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 360" width="760" height="360" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12">
+  <rect width="760" height="360" fill="#ffffff"/>
+  <text x="64" y="22" font-size="15" font-weight="600" fill="#1f2328">quick: best and average fitness (seed 1)</text>
+  <g stroke="#e6e8eb"><line x1="64" x2="740" y1="312.0" y2="312.0"/><line x1="64" x2="740" y1="258.4" y2="258.4"/><line x1="64" x2="740" y1="204.8" y2="204.8"/><line x1="64" x2="740" y1="151.2" y2="151.2"/><line x1="64" x2="740" y1="97.6" y2="97.6"/><line x1="64" x2="740" y1="44.0" y2="44.0"/></g>
+  <g fill="#656d76" text-anchor="end"><text x="56" y="316.0">-100</text><text x="56" y="262.4">0</text><text x="56" y="208.8">100</text><text x="56" y="155.2">200</text><text x="56" y="101.6">300</text><text x="56" y="48.0">400</text></g>
+  <g fill="#656d76" text-anchor="middle"><text x="64.0" y="330">0</text><text x="199.2" y="330">1</text><text x="334.4" y="330">2</text><text x="469.6" y="330">3</text><text x="604.8" y="330">4</text><text x="740.0" y="330">5</text></g>
+  <text x="402" y="350" text-anchor="middle" fill="#656d76">generation</text>
+  <text transform="translate(16 178) rotate(-90)" text-anchor="middle" fill="#656d76">fitness</text>
+  <g stroke="#8c959f" stroke-dasharray="3 4"></g>
+  <g fill="#656d76" font-size="11"><text x="68.0" y="56">straight</text></g>
+  <path d="M64.0,267.8 L199.2,264.1 L334.4,260.3 L469.6,254.4 L604.8,236.3 L740.0,209.3" fill="none" stroke="#9a6700" stroke-width="2"/>
+  <path d="M64.0,212.4 L199.2,188.0 L334.4,148.5 L469.6,127.0 L604.8,49.4 L740.0,46.4" fill="none" stroke="#0969da" stroke-width="2.5"/>
+  <g transform="translate(570 18)">
+    <line x1="0" x2="18" y1="0" y2="0" stroke="#0969da" stroke-width="2.5"/><text x="24" y="4" fill="#1f2328">best</text>
+    <line x1="74" x2="92" y1="0" y2="0" stroke="#9a6700" stroke-width="2"/><text x="98" y="4" fill="#1f2328">average</text>
+  </g>
+</svg>

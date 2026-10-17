@@ -1,0 +1,9 @@
+{
+  "name": "baseline",
+  "description": "The curriculum (straight, curves, sharp, obstacles, traffic, city) with the app's default settings: 150 cars, a 10-8-3 network, no sensor noise.",
+  "mode": "curriculum",
+  "generations": 60,
+  "passShare": 0.05,
+  "passStreak": 3,
+  "trainer": { "populationSize": 150, "seed": 1 }
+}

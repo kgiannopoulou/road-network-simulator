@@ -1,0 +1,14 @@
+{
+  "name": "sharp-wide",
+  "description": "Sharp-turns course, a wider hidden layer: 10-16-3.",
+  "mode": "sharp",
+  "generations": 40,
+  "passShare": 0.05,
+  "trainer": {
+    "populationSize": 150,
+    "seed": 1,
+    "hidden": [
+      16
+    ]
+  }
+}

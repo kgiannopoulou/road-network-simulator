@@ -1,0 +1,11 @@
+{
+  "name": "sharp-default",
+  "description": "Sharp-turns course only, default settings: 10-8-3 network, mutation rate 0.1, amount 0.3.",
+  "mode": "sharp",
+  "generations": 40,
+  "passShare": 0.05,
+  "trainer": {
+    "populationSize": 150,
+    "seed": 1
+  }
+}

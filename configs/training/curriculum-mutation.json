@@ -1,0 +1,9 @@
+{
+  "name": "curriculum-mutation",
+  "description": "The baseline curriculum with the mutation that got past the sharp-turns plateau in the experiment: rate 0.2, amount 0.5.",
+  "mode": "curriculum",
+  "generations": 60,
+  "passShare": 0.05,
+  "passStreak": 3,
+  "trainer": { "populationSize": 150, "seed": 1, "mutationRate": 0.2, "mutationAmount": 0.5 }
+}

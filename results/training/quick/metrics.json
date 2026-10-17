@@ -1,0 +1,95 @@
+{
+  "name": "quick",
+  "config": {
+    "name": "quick",
+    "description": "Smoke run: 6 generations of 30 cars on the straight course (a few seconds).",
+    "mode": "straight",
+    "generations": 6,
+    "trainer": {
+      "populationSize": 30,
+      "seed": 1
+    }
+  },
+  "node": "v24.20.0",
+  "steps": 10806,
+  "seconds": 0.6,
+  "champion": {
+    "fitness": 395.60280278164146,
+    "generation": 5,
+    "course": "straight"
+  },
+  "events": [
+    {
+      "generation": 0,
+      "course": "straight"
+    }
+  ],
+  "history": [
+    {
+      "generation": 0,
+      "best": 85.82233388442518,
+      "average": -17.59633523265016,
+      "survival": 0.7666666666666667,
+      "reached": 0,
+      "champion": 85.82233388442518,
+      "course": "straight",
+      "mutationRate": 0.1,
+      "population": 30
+    },
+    {
+      "generation": 1,
+      "best": 131.38698771161884,
+      "average": -10.711184034840207,
+      "survival": 0.8666666666666667,
+      "reached": 0,
+      "champion": 131.38698771161884,
+      "course": "straight",
+      "mutationRate": 0.1,
+      "population": 30
+    },
+    {
+      "generation": 2,
+      "best": 205.10918454255471,
+      "average": -3.61441800813392,
+      "survival": 0.8333333333333334,
+      "reached": 0,
+      "champion": 205.10918454255471,
+      "course": "straight",
+      "mutationRate": 0.1,
+      "population": 30
+    },
+    {
+      "generation": 3,
+      "best": 245.06452021616644,
+      "average": 7.498295066093086,
+      "survival": 0.9333333333333333,
+      "reached": 0.03333333333333333,
+      "champion": 245.06452021616644,
+      "course": "straight",
+      "mutationRate": 0.1,
+      "population": 30
+    },
+    {
+      "generation": 4,
+      "best": 389.9575466671263,
+      "average": 41.14779036560757,
+      "survival": 0.9666666666666667,
+      "reached": 0.1,
+      "champion": 389.9575466671263,
+      "course": "straight",
+      "mutationRate": 0.1,
+      "population": 30
+    },
+    {
+      "generation": 5,
+      "best": 395.60280278164146,
+      "average": 91.62905771218558,
+      "survival": 0.9,
+      "reached": 0.23333333333333334,
+      "champion": 395.60280278164146,
+      "course": "straight",
+      "mutationRate": 0.1,
+      "population": 30
+    }
+  ]
+}

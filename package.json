@@ -6,7 +6,9 @@
   "private": true,
   "scripts": {
     "start": "npx --yes http-server -c-1 -p 8080 .",
-    "test": "node --test \"tests/unit/*.test.js\""
+    "test": "node --test \"tests/unit/*.test.js\"",
+    "bench": "node tools/bench-pathfinding.mjs",
+    "train": "node tools/train.mjs"
   },
   "engines": {
     "node": ">=22"

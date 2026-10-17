@@ -1,0 +1,13 @@
+{
+  "name": "sharp-mutation",
+  "description": "Sharp-turns course, stronger mutation: rate 0.2, amount 0.5.",
+  "mode": "sharp",
+  "generations": 40,
+  "passShare": 0.05,
+  "trainer": {
+    "populationSize": 150,
+    "seed": 1,
+    "mutationRate": 0.2,
+    "mutationAmount": 0.5
+  }
+}

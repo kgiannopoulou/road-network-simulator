@@ -1,0 +1,15 @@
+{
+  "name": "sharp-deep",
+  "description": "Sharp-turns course, two hidden layers: 10-12-8-3.",
+  "mode": "sharp",
+  "generations": 40,
+  "passShare": 0.05,
+  "trainer": {
+    "populationSize": 150,
+    "seed": 1,
+    "hidden": [
+      12,
+      8
+    ]
+  }
+}

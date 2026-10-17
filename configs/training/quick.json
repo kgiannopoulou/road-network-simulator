@@ -1,0 +1,7 @@
+{
+  "name": "quick",
+  "description": "Smoke run: 6 generations of 30 cars on the straight course (a few seconds).",
+  "mode": "straight",
+  "generations": 6,
+  "trainer": { "populationSize": 30, "seed": 1 }
+}

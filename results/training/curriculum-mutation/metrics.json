@@ -1,0 +1,701 @@
+{
+  "name": "curriculum-mutation",
+  "config": {
+    "name": "curriculum-mutation",
+    "description": "The baseline curriculum with the mutation that got past the sharp-turns plateau in the experiment: rate 0.2, amount 0.5.",
+    "mode": "curriculum",
+    "generations": 60,
+    "passShare": 0.05,
+    "passStreak": 3,
+    "trainer": {
+      "populationSize": 150,
+      "seed": 1,
+      "mutationRate": 0.2,
+      "mutationAmount": 0.5
+    }
+  },
+  "node": "v24.20.0",
+  "steps": 147134,
+  "seconds": 26.1,
+  "champion": {
+    "fitness": 417.12717760872346,
+    "generation": 59,
+    "course": "sharp"
+  },
+  "events": [
+    {
+      "generation": 0,
+      "course": "straight"
+    },
+    {
+      "generation": 9,
+      "course": "curves"
+    },
+    {
+      "generation": 18,
+      "course": "sharp"
+    }
+  ],
+  "history": [
+    {
+      "generation": 0,
+      "best": 416.0582434803854,
+      "average": -13.80300144765109,
+      "survival": 0.7666666666666667,
+      "reached": 0.013333333333333334,
+      "champion": 416.0582434803854,
+      "course": "straight",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 1,
+      "best": 416.0582434803854,
+      "average": -12.530446459550841,
+      "survival": 0.8733333333333333,
+      "reached": 0.013333333333333334,
+      "champion": 416.0582434803854,
+      "course": "straight",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 2,
+      "best": 416.0582434803854,
+      "average": -4.380591351002464,
+      "survival": 0.8266666666666667,
+      "reached": 0.04,
+      "champion": 416.0582434803854,
+      "course": "straight",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 3,
+      "best": 416.0582434803854,
+      "average": -4.1763033543353485,
+      "survival": 0.8066666666666666,
+      "reached": 0.04666666666666667,
+      "champion": 416.0582434803854,
+      "course": "straight",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 4,
+      "best": 416.0582434803854,
+      "average": -2.27724448705446,
+      "survival": 0.8266666666666667,
+      "reached": 0.04666666666666667,
+      "champion": 416.0582434803854,
+      "course": "straight",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 5,
+      "best": 416.0582434803854,
+      "average": -7.011165237566081,
+      "survival": 0.76,
+      "reached": 0.03333333333333333,
+      "champion": 416.0582434803854,
+      "course": "straight",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 6,
+      "best": 416.0582434803854,
+      "average": -0.19681106136341206,
+      "survival": 0.84,
+      "reached": 0.05333333333333334,
+      "champion": 416.0582434803854,
+      "course": "straight",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 7,
+      "best": 416.0582434803854,
+      "average": 5.521542021259512,
+      "survival": 0.8333333333333334,
+      "reached": 0.08666666666666667,
+      "champion": 416.0582434803854,
+      "course": "straight",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 8,
+      "best": 416.0582434803854,
+      "average": 13.076243504006747,
+      "survival": 0.8,
+      "reached": 0.10666666666666667,
+      "champion": 416.0582434803854,
+      "course": "straight",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 9,
+      "best": 522.4974770843675,
+      "average": -11.556916803892031,
+      "survival": 0.6733333333333333,
+      "reached": 0.03333333333333333,
+      "champion": 522.4974770843675,
+      "course": "curves",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 10,
+      "best": 522.4974770843675,
+      "average": -6.043675198572533,
+      "survival": 0.78,
+      "reached": 0.02666666666666667,
+      "champion": 522.4974770843675,
+      "course": "curves",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 11,
+      "best": 522.4974770843675,
+      "average": -10.684022975754115,
+      "survival": 0.7733333333333333,
+      "reached": 0.04666666666666667,
+      "champion": 522.4974770843675,
+      "course": "curves",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 12,
+      "best": 522.4974770843675,
+      "average": -14.459511094311026,
+      "survival": 0.7466666666666667,
+      "reached": 0.02,
+      "champion": 522.4974770843675,
+      "course": "curves",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 13,
+      "best": 522.4974770843675,
+      "average": -9.595722888904179,
+      "survival": 0.82,
+      "reached": 0.04,
+      "champion": 522.4974770843675,
+      "course": "curves",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 14,
+      "best": 522.4974770843675,
+      "average": -12.643983378397175,
+      "survival": 0.7333333333333333,
+      "reached": 0.04,
+      "champion": 522.4974770843675,
+      "course": "curves",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 15,
+      "best": 522.4974770843675,
+      "average": -8.976986750274039,
+      "survival": 0.7466666666666667,
+      "reached": 0.05333333333333334,
+      "champion": 522.4974770843675,
+      "course": "curves",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 16,
+      "best": 522.4974770843675,
+      "average": -9.390982994279096,
+      "survival": 0.7866666666666666,
+      "reached": 0.05333333333333334,
+      "champion": 522.4974770843675,
+      "course": "curves",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 17,
+      "best": 522.4974770843675,
+      "average": -1.5559787655087909,
+      "survival": 0.76,
+      "reached": 0.05333333333333334,
+      "champion": 522.4974770843675,
+      "course": "curves",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 18,
+      "best": 56.39723521841324,
+      "average": -16.448421608921905,
+      "survival": 0.7066666666666667,
+      "reached": 0,
+      "champion": 56.39723521841324,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 19,
+      "best": 56.39723521841324,
+      "average": -18.86918956054761,
+      "survival": 0.64,
+      "reached": 0,
+      "champion": 56.39723521841324,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 20,
+      "best": 60.64108873557646,
+      "average": -15.117936959857152,
+      "survival": 0.5133333333333333,
+      "reached": 0,
+      "champion": 60.64108873557646,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 21,
+      "best": 60.64108873557646,
+      "average": -20.77431186962428,
+      "survival": 0.56,
+      "reached": 0,
+      "champion": 60.64108873557646,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 22,
+      "best": 60.64108873557646,
+      "average": -15.996409917694024,
+      "survival": 0.6333333333333333,
+      "reached": 0,
+      "champion": 60.64108873557646,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 23,
+      "best": 64.45027586735488,
+      "average": -18.246685981482777,
+      "survival": 0.5933333333333334,
+      "reached": 0,
+      "champion": 64.45027586735488,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 24,
+      "best": 64.45027586735488,
+      "average": -15.028568089691953,
+      "survival": 0.5466666666666666,
+      "reached": 0,
+      "champion": 64.45027586735488,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 25,
+      "best": 64.45027586735488,
+      "average": -18.726340452162276,
+      "survival": 0.5466666666666666,
+      "reached": 0,
+      "champion": 64.45027586735488,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 26,
+      "best": 75.88367309238876,
+      "average": -16.83204964715898,
+      "survival": 0.58,
+      "reached": 0,
+      "champion": 75.88367309238876,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 27,
+      "best": 75.88367309238876,
+      "average": -20.677193338620015,
+      "survival": 0.6133333333333333,
+      "reached": 0,
+      "champion": 75.88367309238876,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 28,
+      "best": 75.88367309238876,
+      "average": -15.758784994843694,
+      "survival": 0.7066666666666667,
+      "reached": 0,
+      "champion": 75.88367309238876,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 29,
+      "best": 75.88367309238876,
+      "average": -16.07203254198919,
+      "survival": 0.6333333333333333,
+      "reached": 0,
+      "champion": 75.88367309238876,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 30,
+      "best": 75.88367309238876,
+      "average": -14.820780703974053,
+      "survival": 0.6,
+      "reached": 0,
+      "champion": 75.88367309238876,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 31,
+      "best": 75.88367309238876,
+      "average": -15.299486277646738,
+      "survival": 0.5866666666666667,
+      "reached": 0,
+      "champion": 75.88367309238876,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 32,
+      "best": 75.88367309238876,
+      "average": -20.337142774211973,
+      "survival": 0.5266666666666666,
+      "reached": 0,
+      "champion": 75.88367309238876,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 33,
+      "best": 75.88367309238876,
+      "average": -14.344549882405827,
+      "survival": 0.49333333333333335,
+      "reached": 0,
+      "champion": 75.88367309238876,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 34,
+      "best": 75.88367309238876,
+      "average": -13.298186701848957,
+      "survival": 0.48,
+      "reached": 0,
+      "champion": 75.88367309238876,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 35,
+      "best": 75.88367309238876,
+      "average": -12.6078853652866,
+      "survival": 0.49333333333333335,
+      "reached": 0,
+      "champion": 75.88367309238876,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 36,
+      "best": 75.88367309238876,
+      "average": -10.852131787125558,
+      "survival": 0.41333333333333333,
+      "reached": 0,
+      "champion": 75.88367309238876,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 37,
+      "best": 75.88367309238876,
+      "average": -16.05867909317766,
+      "survival": 0.43333333333333335,
+      "reached": 0,
+      "champion": 75.88367309238876,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 38,
+      "best": 75.88367309238876,
+      "average": -13.689391154699033,
+      "survival": 0.48,
+      "reached": 0,
+      "champion": 75.88367309238876,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 39,
+      "best": 75.88367309238876,
+      "average": -14.014388812606946,
+      "survival": 0.5133333333333333,
+      "reached": 0,
+      "champion": 75.88367309238876,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 40,
+      "best": 75.88367309238876,
+      "average": -14.135063527220574,
+      "survival": 0.5733333333333334,
+      "reached": 0,
+      "champion": 75.88367309238876,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 41,
+      "best": 75.88367309238876,
+      "average": -11.809677862449291,
+      "survival": 0.5666666666666667,
+      "reached": 0,
+      "champion": 75.88367309238876,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 42,
+      "best": 75.88367309238876,
+      "average": -10.567605214179743,
+      "survival": 0.5066666666666667,
+      "reached": 0,
+      "champion": 75.88367309238876,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 43,
+      "best": 75.88367309238876,
+      "average": -12.930771516137526,
+      "survival": 0.5333333333333333,
+      "reached": 0,
+      "champion": 75.88367309238876,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 44,
+      "best": 75.88367309238876,
+      "average": -15.662418013119531,
+      "survival": 0.44,
+      "reached": 0,
+      "champion": 75.88367309238876,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 45,
+      "best": 191.16748806648985,
+      "average": -11.385053729077208,
+      "survival": 0.42,
+      "reached": 0,
+      "champion": 191.16748806648985,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 46,
+      "best": 191.16748806648985,
+      "average": -11.49247931629177,
+      "survival": 0.38,
+      "reached": 0,
+      "champion": 191.16748806648985,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 47,
+      "best": 191.16748806648985,
+      "average": -8.770064011803724,
+      "survival": 0.28,
+      "reached": 0,
+      "champion": 191.16748806648985,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 48,
+      "best": 191.16748806648985,
+      "average": -11.587594186726118,
+      "survival": 0.4,
+      "reached": 0,
+      "champion": 191.16748806648985,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 49,
+      "best": 191.16748806648985,
+      "average": -8.649443659051467,
+      "survival": 0.3333333333333333,
+      "reached": 0,
+      "champion": 191.16748806648985,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 50,
+      "best": 380.4368025844162,
+      "average": -5.792484075555586,
+      "survival": 0.44666666666666666,
+      "reached": 0.006666666666666667,
+      "champion": 380.4368025844162,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 51,
+      "best": 380.4368025844162,
+      "average": -5.530815929266538,
+      "survival": 0.4866666666666667,
+      "reached": 0.006666666666666667,
+      "champion": 380.4368025844162,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 52,
+      "best": 380.4368025844162,
+      "average": -0.563583282871495,
+      "survival": 0.36666666666666664,
+      "reached": 0.006666666666666667,
+      "champion": 380.4368025844162,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 53,
+      "best": 380.4368025844162,
+      "average": -3.840709546120287,
+      "survival": 0.3933333333333333,
+      "reached": 0.006666666666666667,
+      "champion": 380.4368025844162,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 54,
+      "best": 380.4368025844162,
+      "average": -1.1834014803513893,
+      "survival": 0.3933333333333333,
+      "reached": 0.006666666666666667,
+      "champion": 380.4368025844162,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 55,
+      "best": 405.7828331394082,
+      "average": 0.3275891550687054,
+      "survival": 0.47333333333333333,
+      "reached": 0.013333333333333334,
+      "champion": 405.7828331394082,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 56,
+      "best": 405.7828331394082,
+      "average": 6.798604580795372,
+      "survival": 0.41333333333333333,
+      "reached": 0.02666666666666667,
+      "champion": 405.7828331394082,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 57,
+      "best": 405.7828331394082,
+      "average": 11.05703298699723,
+      "survival": 0.3933333333333333,
+      "reached": 0.03333333333333333,
+      "champion": 405.7828331394082,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 58,
+      "best": 405.7828331394082,
+      "average": 13.229758374248895,
+      "survival": 0.38666666666666666,
+      "reached": 0.03333333333333333,
+      "champion": 405.7828331394082,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    },
+    {
+      "generation": 59,
+      "best": 417.12717760872346,
+      "average": 9.315750980452444,
+      "survival": 0.43333333333333335,
+      "reached": 0.02666666666666667,
+      "champion": 417.12717760872346,
+      "course": "sharp",
+      "mutationRate": 0.2,
+      "population": 150
+    }
+  ]
+}
