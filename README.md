@@ -93,6 +93,20 @@ autonomous drives. The headless simulation is the same code the browser runs.
   the straight course; the autonomous car completes A-to-B routes in traffic.
 - **Visual tests**: an interactive geometry gallery at `/tests/visual/`.
 
+## Limitations
+
+* **2D and kinematic.** A bicycle model with a tyre-grip term, not a full vehicle-dynamics model; no
+  elevation, weather or night-time sensing.
+* **Simulated sensors only.** Noise, latency and dropouts are modelled, but nothing is validated
+  against real sensor data or a real car — this is a learning and engineering lab, not a driving stack.
+* **The learned driver and the autonomy stack are separate.** The neural-network cars learn road
+  following on curriculum courses; A-to-B driving through the city uses the classical
+  perception → planning → control stack.
+* **Evolution, not gradient training.** Chosen to build everything from first principles; it is
+  slower and plateaus earlier than modern RL ([docs/training.md](docs/training.md)).
+* **Single-threaded rendering.** Training runs in a Web Worker, but very large cities slow the
+  browser view.
+
 ## Documentation
 
 | | |
@@ -102,6 +116,7 @@ autonomous drives. The headless simulation is the same code the browser runs.
 | [Training](docs/training.md) | Reproducible configs, results, the mutation experiment |
 | [Benchmarks](docs/benchmarks.md) | A* vs Dijkstra, edge cases tested |
 | [Controls](docs/controls.md) | Every key and mouse action |
+| [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) | Development workflow and release history |
 
 ## Milestones
 
@@ -117,4 +132,4 @@ autonomous drives. The headless simulation is the same code the browser runs.
 
 ## Licence
 
-MIT
+[MIT](LICENSE) © 2026 kgiannopoulou
